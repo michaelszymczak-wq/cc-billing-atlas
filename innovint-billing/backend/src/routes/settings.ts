@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { AppSettings, BarrelSnapshots, BillableAddOn, FruitIntakeSettings, RateRule } from '../types';
+import { AppSettings, BarrelSnapshots, BillableAddOn, FruitIntakeSettings, QBExportSettings, RateRule } from '../types';
 
 const router = Router();
 const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
@@ -18,6 +18,11 @@ function defaultSettings(): AppSettings {
     fruitIntake: null,
     customerMap: {},
     billableAddOns: [],
+    qbExportSettings: {
+      excludedCustomers: ['ELE'],
+      enabledSources: { actions: true, barrel: true, bulk: true, fruitIntake: true, addOns: true },
+    },
+    qbExportHistory: [],
     fruitIntakeSettings: {
       actionTypeKey: 'FRUITINTAKE',
       vintageLookback: 3,
@@ -62,6 +67,8 @@ export function loadSettings(): AppSettings {
         customerMap: parsed.customerMap ?? defaults.customerMap,
         fruitIntakeSettings: parsed.fruitIntakeSettings ?? defaults.fruitIntakeSettings,
         billableAddOns: Array.isArray(parsed.billableAddOns) ? parsed.billableAddOns : defaults.billableAddOns,
+        qbExportSettings: parsed.qbExportSettings ?? defaults.qbExportSettings,
+        qbExportHistory: Array.isArray(parsed.qbExportHistory) ? parsed.qbExportHistory : defaults.qbExportHistory,
       };
     }
   } catch {
@@ -88,6 +95,8 @@ router.get('/', (_req: Request, res: Response) => {
     customerMap: settings.customerMap,
     fruitIntakeSettings: settings.fruitIntakeSettings,
     billableAddOns: settings.billableAddOns,
+    qbExportSettings: settings.qbExportSettings,
+    qbExportHistory: settings.qbExportHistory,
   });
 });
 
@@ -107,6 +116,8 @@ router.post('/', (req: Request, res: Response) => {
     customerMap: (body as Record<string, unknown>).customerMap !== undefined ? (body as Record<string, unknown>).customerMap as Record<string, string> : current.customerMap,
     fruitIntakeSettings: (body as Record<string, unknown>).fruitIntakeSettings !== undefined ? (body as Record<string, unknown>).fruitIntakeSettings as FruitIntakeSettings : current.fruitIntakeSettings,
     billableAddOns: (body as Record<string, unknown>).billableAddOns !== undefined ? (body as Record<string, unknown>).billableAddOns as BillableAddOn[] : current.billableAddOns,
+    qbExportSettings: (body as Record<string, unknown>).qbExportSettings !== undefined ? (body as Record<string, unknown>).qbExportSettings as QBExportSettings : current.qbExportSettings,
+    qbExportHistory: current.qbExportHistory,
   };
 
   saveSettings(updated);

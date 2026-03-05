@@ -4,9 +4,10 @@ import BillingControls, { BillingRunState, defaultBillingRunState } from './comp
 import RateTableManager from './components/RateTableManager';
 import FruitIntakePage from './components/FruitIntakePage';
 import BillableAddOnsPage from './components/BillableAddOnsPage';
+import QBExportPage from './components/QBExportPage';
 import { getSettings, RateRule, AppConfig } from './api/client';
 
-type Page = 'billing' | 'rate-table' | 'fruit-intake' | 'add-ons' | 'settings';
+type Page = 'billing' | 'rate-table' | 'fruit-intake' | 'add-ons' | 'qb-export' | 'settings';
 
 export default function App() {
   const [page, setPage] = useState<Page>('billing');
@@ -62,6 +63,11 @@ export default function App() {
         label="Add-Ons"
         active={page === 'add-ons'}
         onClick={() => navigateTo('add-ons')}
+      />
+      <NavItem
+        label="QB Export"
+        active={page === 'qb-export'}
+        onClick={() => navigateTo('qb-export')}
       />
       <NavItem
         label="Settings"
@@ -164,6 +170,9 @@ export default function App() {
             rateRules={config.rateRules}
             ownerCodes={[...new Set(Object.values(config.customerMap || {}))].sort()}
           />
+        )}
+        {page === 'qb-export' && config && (
+          <QBExportPage config={config} billingState={billingState} />
         )}
         {!config && (
           <div className="text-gray-400 text-sm">Loading configuration...</div>

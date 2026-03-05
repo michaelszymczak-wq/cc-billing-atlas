@@ -103,6 +103,50 @@ export interface BillableAddOn {
   notes: string;
 }
 
+export interface QBExportSettings {
+  excludedCustomers: string[];
+  enabledSources: { actions: boolean; barrel: boolean; bulk: boolean; fruitIntake: boolean; addOns: boolean };
+}
+
+export interface QBExportRecord {
+  id: string;
+  exportedAt: string;
+  month: string;
+  year: number;
+  customerCount: number;
+  lineItemCount: number;
+  totalAmount: number;
+  filename: string;
+}
+
+export interface QBLineItem {
+  arAccount: string;
+  customerJob: string;
+  date: string;
+  salesTax: string;
+  number: string;
+  class: string;
+  item: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  taxCode: string;
+}
+
+export interface QBCustomerSummary {
+  ownerCode: string;
+  sources: Record<'actions'|'barrel'|'bulk'|'fruitIntake'|'addOns', { items: QBLineItem[]; subtotal: number }>;
+  total: number;
+}
+
+export interface QBPreviewResponse {
+  customers: QBCustomerSummary[];
+  grandTotal: number;
+  lineItemCount: number;
+  billingDate: string;
+}
+
 export interface AppConfig {
   token: string;
   wineryId: string;
@@ -114,6 +158,8 @@ export interface AppConfig {
   customerMap: Record<string, string>;
   fruitIntakeSettings: FruitIntakeSettings;
   billableAddOns: BillableAddOn[];
+  qbExportSettings: QBExportSettings;
+  qbExportHistory: QBExportRecord[];
 }
 
 export interface ActionRow {
@@ -368,6 +414,56 @@ export async function deleteBillableAddOn(id: string): Promise<BillableAddOn[]> 
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete billable add-on');
+  return res.json();
+}
+
+// ─── QuickBooks Export API ───
+
+export async function getQBPreview(params: {
+  sessionId: string;
+  month: string;
+  year: number;
+  excludedCustomers?: string[];
+  enabledSources?: QBExportSettings['enabledSources'];
+}): Promise<QBPreviewResponse> {
+  const res = await fetch(`${BASE_URL}/export/quickbooks/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to generate QB preview');
+  }
+  return res.json();
+}
+
+export async function downloadQBCSV(params: {
+  sessionId: string;
+  month: string;
+  year: number;
+  excludedCustomers?: string[];
+  enabledSources?: QBExportSettings['enabledSources'];
+}): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${BASE_URL}/export/quickbooks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to download QB CSV');
+  }
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+  const filename = filenameMatch ? filenameMatch[1] : 'QB_Import.csv';
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+export async function getQBExportHistory(): Promise<QBExportRecord[]> {
+  const res = await fetch(`${BASE_URL}/export/quickbooks/history`);
+  if (!res.ok) throw new Error('Failed to load QB export history');
   return res.json();
 }
 

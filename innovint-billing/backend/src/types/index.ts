@@ -335,6 +335,8 @@ export interface AppSettings {
   customerMap: Record<string, string>;
   fruitIntakeSettings: FruitIntakeSettings;
   billableAddOns: BillableAddOn[];
+  qbExportSettings: QBExportSettings;
+  qbExportHistory: QBExportRecord[];
 }
 
 // ─── SSE Progress ───
@@ -349,6 +351,52 @@ export interface ProgressEvent {
 
 export interface SessionData {
   billingResult?: BillingResponse;
+}
+
+// ─── QuickBooks Export ───
+
+export interface QBExportSettings {
+  excludedCustomers: string[];
+  enabledSources: { actions: boolean; barrel: boolean; bulk: boolean; fruitIntake: boolean; addOns: boolean };
+}
+
+export interface QBExportRecord {
+  id: string;
+  exportedAt: string;
+  month: string;
+  year: number;
+  customerCount: number;
+  lineItemCount: number;
+  totalAmount: number;
+  filename: string;
+}
+
+export interface QBLineItem {
+  arAccount: string;
+  customerJob: string;
+  date: string;
+  salesTax: string;
+  number: string;
+  class: string;
+  item: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  taxCode: string;
+}
+
+export interface QBCustomerSummary {
+  ownerCode: string;
+  sources: Record<'actions'|'barrel'|'bulk'|'fruitIntake'|'addOns', { items: QBLineItem[]; subtotal: number }>;
+  total: number;
+}
+
+export interface QBPreviewResponse {
+  customers: QBCustomerSummary[];
+  grandTotal: number;
+  lineItemCount: number;
+  billingDate: string;
 }
 
 // ─── Omitted Action Types ───

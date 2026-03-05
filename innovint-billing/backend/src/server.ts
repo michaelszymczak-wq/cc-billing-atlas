@@ -4,6 +4,7 @@ import settingsRouter from './routes/settings';
 import actionsRouter from './routes/actions';
 import fruitIntakeRouter from './routes/fruitIntake';
 import billableAddOnsRouter from './routes/billableAddOns';
+import qbExportRouter from './routes/qbExport';
 
 const app = express();
 const PORT = 3001;
@@ -19,6 +20,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api', actionsRouter);
 app.use('/api/fruit-intake', fruitIntakeRouter);
 app.use('/api/billable-add-ons', billableAddOnsRouter);
+app.use('/api/export/quickbooks', qbExportRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

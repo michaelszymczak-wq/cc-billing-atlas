@@ -11,7 +11,7 @@ import { loadSettings } from './settings';
 const router = Router();
 
 // In-memory session store
-const sessions = new Map<string, SessionData>();
+export const sessions = new Map<string, SessionData>();
 
 // SSE clients for progress streaming (exported for reuse by fruit intake routes)
 export const sseClients = new Map<string, Response>();
