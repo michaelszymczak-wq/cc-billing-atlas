@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { AppSettings, BarrelSnapshots, BillableAddOn, FruitIntakeSettings, QBExportSettings, RateRule } from '../types';
+import { CONFIG_PATH } from '../config';
 
 const router = Router();
-const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
 
 function defaultSettings(): AppSettings {
   return {

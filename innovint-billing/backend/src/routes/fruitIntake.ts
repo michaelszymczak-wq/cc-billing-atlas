@@ -5,12 +5,8 @@ import { runFruitIntake, recalculateRecord } from '../services/fruitIntakeServic
 
 const router = Router();
 
-// In-memory store for settings save function
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
+import { CONFIG_PATH } from '../config';
 
 function saveConfig(settings: ReturnType<typeof loadSettings>): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf-8');

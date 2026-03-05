@@ -4,11 +4,9 @@ import { loadSettings } from './settings';
 import { buildPreview, generateCSV, getShortMonthYear } from '../services/qbExport';
 import { QBExportRecord } from '../types';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { CONFIG_PATH } from '../config';
 
 const router = Router();
-const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
 
 // POST /preview — generate preview data
 router.post('/preview', (req: Request, res: Response) => {

@@ -1,12 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { loadSettings } from './settings';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { BillableAddOn } from '../types';
+import { CONFIG_PATH } from '../config';
 
 const router = Router();
-const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
 
 function saveSettings(settings: ReturnType<typeof loadSettings>): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf-8');
