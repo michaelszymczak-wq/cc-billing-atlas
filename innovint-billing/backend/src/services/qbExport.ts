@@ -110,7 +110,7 @@ function makeLineItem(
 ): QBLineItem {
   const amount = Math.round(quantity * rate * 100) / 100;
   return {
-    arAccount: '4010 · Sales',
+    arAccount: '4010 \u00b7 Sales',
     customerJob,
     date,
     salesTax: 'no tax',
@@ -340,5 +340,5 @@ export function generateCSV(preview: QBPreviewResponse): string {
     }
   }
 
-  return lines.join('\r\n') + '\r\n';
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
