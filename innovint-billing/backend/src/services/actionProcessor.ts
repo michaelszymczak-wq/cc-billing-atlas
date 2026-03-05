@@ -167,6 +167,24 @@ function extractHours(text: string): number {
 }
 
 /**
+ * Extract hours from notes text (for Billable CUSTOM actions where actionData.name contains "Billable").
+ * Looks for patterns like "4.5 hours", "2 hrs", "Billable Hours: 3" anywhere in the text.
+ */
+function extractHoursFromNotes(text: string): number {
+  // Pattern 1: billable hours: N
+  const p1 = /billable\s+hours?\s*[:=]\s*(\d+(?:\.\d+)?)/i;
+  const m1 = p1.exec(text);
+  if (m1) return parseFloat(m1[1]);
+
+  // Pattern 2: N hours/hrs anywhere in text
+  const p2 = /(\d+(?:\.\d+)?)\s*(?:hrs?|hours?)(?:[^a-z]|$)/i;
+  const m2 = p2.exec(text);
+  if (m2) return parseFloat(m2[1]);
+
+  return 1; // default
+}
+
+/**
  * Check if a CUSTOM action is a steam action.
  */
 function isSteamAction(action: ActionApiItem): boolean {
@@ -366,7 +384,14 @@ function processCustomAction(action: ActionApiItem): ActionRow[] {
   const actionName = getActionName(action);
   const notesText = getNotesText(action);
   const combined = [actionName, notesText].filter(Boolean).join(' ');
-  const hours = extractHours(combined);
+
+  // When actionData.name contains "Billable", parse hours from notes text first
+  let hours: number;
+  if (/billable/i.test(actionName) && notesText) {
+    hours = extractHoursFromNotes(notesText);
+  } else {
+    hours = extractHours(combined);
+  }
 
   return [{
     actionType: 'CUSTOM',
