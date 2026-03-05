@@ -153,8 +153,8 @@ export function extractAllLotCodes(action: ActionApiItem): string {
  * Extract hours from notes/name for CUSTOM actions.
  */
 function extractHours(text: string): number {
-  // Pattern 1: billable hours: N
-  const p1 = /billable\s+hours?\s*[:=]\s*(\d+(?:\.\d+)?)/i;
+  // Pattern 1: billable hours/hrs [:=]? N
+  const p1 = /billable\s+(?:hours?|hrs?)\s*[:=]?\s*(\d+(?:\.\d+)?)/i;
   const m1 = p1.exec(text);
   if (m1) return parseFloat(m1[1]);
 
@@ -171,8 +171,8 @@ function extractHours(text: string): number {
  * Looks for patterns like "4.5 hours", "2 hrs", "Billable Hours: 3" anywhere in the text.
  */
 function extractHoursFromNotes(text: string): number {
-  // Pattern 1: billable hours: N
-  const p1 = /billable\s+hours?\s*[:=]\s*(\d+(?:\.\d+)?)/i;
+  // Pattern 1: billable hours/hrs [:=]? N
+  const p1 = /billable\s+(?:hours?|hrs?)\s*[:=]?\s*(\d+(?:\.\d+)?)/i;
   const m1 = p1.exec(text);
   if (m1) return parseFloat(m1[1]);
 
