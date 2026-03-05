@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   AppConfig, QBPreviewResponse, QBExportRecord, QBExportSettings,
-  getQBPreview, downloadQBCSV, getQBExportHistory,
+  getQBPreview, downloadQBCSV, getQBExportHistory, saveQBCustomerMap,
 } from '../api/client';
 import { BillingRunState } from './BillingControls';
 
@@ -21,9 +21,10 @@ const SOURCE_LABELS: Record<string, string> = {
 interface QBExportPageProps {
   config: AppConfig;
   billingState: BillingRunState | null;
+  onConfigChange?: (updater: (prev: AppConfig) => AppConfig) => void;
 }
 
-export default function QBExportPage({ config, billingState }: QBExportPageProps) {
+export default function QBExportPage({ config, billingState, onConfigChange }: QBExportPageProps) {
   const [month, setMonth] = useState(config.lastUsedMonth);
   const [year, setYear] = useState(config.lastUsedYear);
   const [excludedText, setExcludedText] = useState(
@@ -39,6 +40,12 @@ export default function QBExportPage({ config, billingState }: QBExportPageProps
   const [error, setError] = useState('');
   const [history, setHistory] = useState<QBExportRecord[]>(config.qbExportHistory || []);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [qbCustomerMap, setQbCustomerMap] = useState<Record<string, string>>(config.qbCustomerMap || {});
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapSaving, setMapSaving] = useState(false);
+  const [mapDirty, setMapDirty] = useState(false);
+  const [newMapCode, setNewMapCode] = useState('');
+  const [newMapName, setNewMapName] = useState('');
 
   const hasSession = !!(billingState?.sessionId && billingState.results);
 
@@ -137,6 +144,79 @@ export default function QBExportPage({ config, billingState }: QBExportPageProps
     setEnabledSources(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleMapUpdate = (code: string, name: string) => {
+    setQbCustomerMap(prev => ({ ...prev, [code]: name }));
+    setMapDirty(true);
+  };
+
+  const handleMapDelete = (code: string) => {
+    setQbCustomerMap(prev => {
+      const next = { ...prev };
+      delete next[code];
+      return next;
+    });
+    setMapDirty(true);
+  };
+
+  const handleMapAdd = () => {
+    const code = newMapCode.trim().toUpperCase();
+    const name = newMapName.trim();
+    if (!code || !name) return;
+    setQbCustomerMap(prev => ({ ...prev, [code]: name }));
+    setNewMapCode('');
+    setNewMapName('');
+    setMapDirty(true);
+  };
+
+  const handleMapSave = async () => {
+    setMapSaving(true);
+    try {
+      await saveQBCustomerMap(qbCustomerMap);
+      setMapDirty(false);
+      onConfigChange?.(prev => ({ ...prev, qbCustomerMap }));
+    } catch {
+      setError('Failed to save QB customer map');
+    } finally {
+      setMapSaving(false);
+    }
+  };
+
+  const handleMapImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (!text) return;
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      const imported: Record<string, string> = {};
+      for (const line of lines) {
+        // Parse CSV: handle quoted fields
+        const match = line.match(/^"?([^",]+)"?\s*,\s*"?(.*?)"?\s*$/);
+        if (match) {
+          const code = match[1].trim().toUpperCase();
+          const name = match[2].trim();
+          if (code && name) imported[code] = name;
+        }
+      }
+      if (Object.keys(imported).length === 0) {
+        setError('No valid mappings found in CSV. Expected two columns: Code, QB Customer Name');
+        return;
+      }
+      setQbCustomerMap(prev => ({ ...prev, ...imported }));
+      setMapDirty(true);
+      setError('');
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be re-imported
+    e.target.value = '';
+  };
+
+  // Auto-populate known owner codes from preview that aren't already mapped
+  const unmappedCodes = preview
+    ? preview.customers.map(c => c.ownerCode).filter(code => !qbCustomerMap[code])
+    : [];
+
   const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
   return (
@@ -214,6 +294,108 @@ export default function QBExportPage({ config, billingState }: QBExportPageProps
         </button>
       </div>
 
+      {/* QB Customer Name Mapping */}
+      <div className="mb-8 border-t pt-4">
+        <button
+          onClick={() => setMapOpen(!mapOpen)}
+          className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 mb-3"
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${mapOpen ? 'rotate-90' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          QB Customer Mapping ({Object.keys(qbCustomerMap).length})
+        </button>
+
+        {mapOpen && (
+          <div className="max-w-lg space-y-3">
+            <p className="text-xs text-gray-500">
+              Map owner codes to QuickBooks customer names. Unmapped codes use the raw owner code.
+            </p>
+
+            {/* Existing mappings */}
+            {Object.entries(qbCustomerMap).sort(([a], [b]) => a.localeCompare(b)).map(([code, name]) => (
+              <div key={code} className="flex items-center gap-2">
+                <span className="w-20 text-sm font-mono font-medium text-gray-700 shrink-0">{code}</span>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => handleMapUpdate(code, e.target.value)}
+                  className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                />
+                <button
+                  onClick={() => handleMapDelete(code)}
+                  className="text-red-400 hover:text-red-600 text-sm px-1"
+                  title="Remove mapping"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+
+            {/* Add new mapping */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newMapCode}
+                onChange={e => setNewMapCode(e.target.value.toUpperCase())}
+                placeholder="Code"
+                className="w-20 border border-gray-300 rounded px-2 py-1 text-sm font-mono shrink-0"
+              />
+              <input
+                type="text"
+                value={newMapName}
+                onChange={e => setNewMapName(e.target.value)}
+                placeholder="QB Customer Name"
+                className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                onKeyDown={e => { if (e.key === 'Enter') handleMapAdd(); }}
+              />
+              <button
+                onClick={handleMapAdd}
+                disabled={!newMapCode.trim() || !newMapName.trim()}
+                className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-sm border hover:bg-gray-200 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+
+            {/* Quick-add unmapped codes from preview */}
+            {unmappedCodes.length > 0 && (
+              <div className="text-xs text-gray-500">
+                <span>Unmapped codes from preview: </span>
+                {unmappedCodes.map(code => (
+                  <button
+                    key={code}
+                    onClick={() => { setNewMapCode(code); setMapOpen(true); }}
+                    className="inline-block bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded mr-1 mb-1 hover:bg-gray-200 font-mono"
+                  >
+                    {code}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Save & Import buttons */}
+            <div className="flex gap-2">
+            <button
+              onClick={handleMapSave}
+              disabled={!mapDirty || mapSaving}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {mapSaving ? 'Saving...' : mapDirty ? 'Save Mapping' : 'Saved'}
+            </button>
+            <label className="bg-gray-100 text-gray-700 px-4 py-1.5 rounded text-sm font-medium border hover:bg-gray-200 cursor-pointer">
+              Import CSV
+              <input type="file" accept=".csv,.txt" onChange={handleMapImportCSV} className="hidden" />
+            </label>
+            </div>
+            <p className="text-xs text-gray-400">CSV format: Code, QB Customer Name (one per line)</p>
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-6 text-sm">
           {error}
@@ -276,7 +458,12 @@ export default function QBExportPage({ config, billingState }: QBExportPageProps
                     key={c.ownerCode}
                     className={`border-b hover:bg-gray-50 ${c.total === 0 ? 'bg-yellow-50' : ''}`}
                   >
-                    <td className="px-3 py-2 font-medium">{c.ownerCode}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {c.ownerCode}
+                      {qbCustomerMap[c.ownerCode] && (
+                        <span className="text-gray-400 font-normal ml-1 text-xs">({qbCustomerMap[c.ownerCode]})</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">{c.sources.actions.subtotal ? fmt(c.sources.actions.subtotal) : '-'}</td>
                     <td className="px-3 py-2 text-right">{c.sources.barrel.subtotal ? fmt(c.sources.barrel.subtotal) : '-'}</td>
                     <td className="px-3 py-2 text-right">{c.sources.bulk.subtotal ? fmt(c.sources.bulk.subtotal) : '-'}</td>
@@ -308,7 +495,12 @@ export default function QBExportPage({ config, billingState }: QBExportPageProps
                 className={`border rounded-lg p-3 ${c.total === 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-white'}`}
               >
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-sm">{c.ownerCode}</span>
+                  <span className="font-bold text-sm">
+                    {c.ownerCode}
+                    {qbCustomerMap[c.ownerCode] && (
+                      <span className="text-gray-400 font-normal ml-1 text-xs">({qbCustomerMap[c.ownerCode]})</span>
+                    )}
+                  </span>
                   <span className="font-bold text-sm">{fmt(c.total)}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-600">

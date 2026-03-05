@@ -20,6 +20,7 @@ router.get('/', async (_req: Request, res: Response) => {
     billableAddOns: settings.billableAddOns,
     qbExportSettings: settings.qbExportSettings,
     qbExportHistory: settings.qbExportHistory,
+    qbCustomerMap: settings.qbCustomerMap,
   });
 });
 
@@ -41,6 +42,7 @@ router.post('/', async (req: Request, res: Response) => {
     billableAddOns: (body as Record<string, unknown>).billableAddOns !== undefined ? (body as Record<string, unknown>).billableAddOns as BillableAddOn[] : current.billableAddOns,
     qbExportSettings: (body as Record<string, unknown>).qbExportSettings !== undefined ? (body as Record<string, unknown>).qbExportSettings as QBExportSettings : current.qbExportSettings,
     qbExportHistory: current.qbExportHistory,
+    qbCustomerMap: (body as Record<string, unknown>).qbCustomerMap !== undefined ? (body as Record<string, unknown>).qbCustomerMap as Record<string, string> : current.qbCustomerMap,
   };
 
   await saveSettings(updated);
@@ -102,6 +104,19 @@ router.put('/fruit-intake-settings', async (req: Request, res: Response) => {
   };
   await saveSettings(current);
   res.json({ success: true, fruitIntakeSettings: current.fruitIntakeSettings });
+});
+
+// PUT /api/settings/qb-customer-map — save owner code→QB customer name mapping
+router.put('/qb-customer-map', async (req: Request, res: Response) => {
+  const qbCustomerMap = req.body as Record<string, string>;
+  if (typeof qbCustomerMap !== 'object' || Array.isArray(qbCustomerMap)) {
+    res.status(400).json({ error: 'Expected an object mapping owner codes to QB customer names.' });
+    return;
+  }
+  const current = await loadSettings();
+  current.qbCustomerMap = qbCustomerMap;
+  await saveSettings(current);
+  res.json({ success: true, count: Object.keys(qbCustomerMap).length });
 });
 
 // PUT /api/settings/customer-map — save customer name→code mapping

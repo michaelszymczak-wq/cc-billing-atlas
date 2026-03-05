@@ -160,6 +160,7 @@ export interface AppConfig {
   billableAddOns: BillableAddOn[];
   qbExportSettings: QBExportSettings;
   qbExportHistory: QBExportRecord[];
+  qbCustomerMap: Record<string, string>;
 }
 
 export interface ActionRow {
@@ -370,6 +371,16 @@ export async function saveFruitIntakeSettings(settings: FruitIntakeSettings): Pr
     body: JSON.stringify(settings),
   });
   if (!res.ok) throw new Error('Failed to save fruit intake settings');
+  return res.json();
+}
+
+export async function saveQBCustomerMap(qbCustomerMap: Record<string, string>): Promise<{ success: boolean }> {
+  const res = await fetch(`${BASE_URL}/settings/qb-customer-map`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(qbCustomerMap),
+  });
+  if (!res.ok) throw new Error('Failed to save QB customer map');
   return res.json();
 }
 

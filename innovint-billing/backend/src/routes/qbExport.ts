@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { sessions } from './actions';
-import { loadSettings, saveSettings } from '../persistence';
+import { loadSettings, saveSettings, loadSessionResult } from '../persistence';
 import { buildPreview, generateCSV, getShortMonthYear } from '../services/qbExport';
 import { QBExportRecord } from '../types';
 
@@ -16,7 +16,14 @@ router.post('/preview', async (req: Request, res: Response) => {
     enabledSources?: { actions: boolean; barrel: boolean; bulk: boolean; fruitIntake: boolean; addOns: boolean };
   };
 
-  const session = sessions.get(sessionId);
+  let session = sessions.get(sessionId);
+  if (!session?.billingResult) {
+    const stored = await loadSessionResult(sessionId);
+    if (stored?.billingResult) {
+      sessions.set(sessionId, stored);
+      session = stored;
+    }
+  }
   if (!session?.billingResult) {
     res.status(404).json({ error: 'No billing results found for this session. Run billing first.' });
     return;
@@ -38,7 +45,8 @@ router.post('/preview', async (req: Request, res: Response) => {
     month,
     year,
     excluded,
-    sources
+    sources,
+    settings.qbCustomerMap
   );
 
   res.json(preview);
@@ -54,7 +62,14 @@ router.post('/', async (req: Request, res: Response) => {
     enabledSources?: { actions: boolean; barrel: boolean; bulk: boolean; fruitIntake: boolean; addOns: boolean };
   };
 
-  const session = sessions.get(sessionId);
+  let session = sessions.get(sessionId);
+  if (!session?.billingResult) {
+    const stored = await loadSessionResult(sessionId);
+    if (stored?.billingResult) {
+      sessions.set(sessionId, stored);
+      session = stored;
+    }
+  }
   if (!session?.billingResult) {
     res.status(404).json({ error: 'No billing results found for this session. Run billing first.' });
     return;
@@ -76,7 +91,8 @@ router.post('/', async (req: Request, res: Response) => {
     month,
     year,
     excluded,
-    sources
+    sources,
+    settings.qbCustomerMap
   );
 
   const csv = generateCSV(preview);

@@ -337,6 +337,7 @@ export interface AppSettings {
   billableAddOns: BillableAddOn[];
   qbExportSettings: QBExportSettings;
   qbExportHistory: QBExportRecord[];
+  qbCustomerMap: Record<string, string>;
 }
 
 // ─── SSE Progress ───

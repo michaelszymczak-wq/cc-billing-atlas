@@ -114,7 +114,7 @@ function makeLineItem(
     customerJob,
     date,
     salesTax: 'no tax',
-    number: '',
+    number: '250',
     class: '',
     item,
     description,
@@ -138,7 +138,8 @@ export function buildPreview(
   month: string,
   year: number,
   excluded: string[],
-  enabledSources: EnabledSources
+  enabledSources: EnabledSources,
+  qbCustomerMap: Record<string, string> = {}
 ): QBPreviewResponse {
   const billingDate = getLastDayOfMonth(month, year);
   const excludedSet = new Set(excluded.map(c => c.toUpperCase()));
@@ -165,6 +166,7 @@ export function buildPreview(
   const customers: QBCustomerSummary[] = [];
 
   for (const ownerCode of owners) {
+    const customerJob = qbCustomerMap[ownerCode] || ownerCode;
     const sources = emptySources();
 
     // Actions: group matched actions by ownerCode + actionType combo, sum quantities/totals
@@ -188,7 +190,7 @@ export function buildPreview(
       }
       for (const [, g] of grouped) {
         const effectiveRate = g.qty > 0 ? Math.round((g.total / g.qty) * 100) / 100 : g.rate;
-        const lineItem = makeLineItem(ownerCode, billingDate, g.item, g.desc, g.qty, effectiveRate);
+        const lineItem = makeLineItem(customerJob, billingDate, g.item, g.desc, g.qty, effectiveRate);
         // Override amount with actual total to avoid rounding issues
         lineItem.amount = Math.round(g.total * 100) / 100;
         sources.actions.items.push(lineItem);
@@ -202,7 +204,7 @@ export function buildPreview(
       const ownerBarrels = barrelInv.filter(b => b.ownerCode === ownerCode);
       for (const b of ownerBarrels) {
         const mapped = mapToQuickBooksItem('BARREL', '');
-        const lineItem = makeLineItem(ownerCode, billingDate, mapped.item, mapped.description, b.avgBarrels, b.rate);
+        const lineItem = makeLineItem(customerJob, billingDate, mapped.item, mapped.description, b.avgBarrels, b.rate);
         lineItem.amount = Math.round(b.charge * 100) / 100;
         sources.barrel.items.push(lineItem);
         sources.barrel.subtotal += lineItem.amount;
@@ -217,7 +219,7 @@ export function buildPreview(
         const totalCost = ownerBulk.reduce((sum, b) => sum + b.totalCost, 0);
         const totalQty = ownerBulk.reduce((sum, b) => sum + (b.barrelCount + b.kegCount), 0) || 1;
         const mapped = mapToQuickBooksItem('BULK', '');
-        const lineItem = makeLineItem(ownerCode, billingDate, mapped.item, mapped.description, totalQty, Math.round((totalCost / totalQty) * 100) / 100);
+        const lineItem = makeLineItem(customerJob, billingDate, mapped.item, mapped.description, totalQty, Math.round((totalCost / totalQty) * 100) / 100);
         lineItem.amount = Math.round(totalCost * 100) / 100;
         sources.bulk.items.push(lineItem);
         sources.bulk.subtotal = lineItem.amount;
@@ -246,7 +248,7 @@ export function buildPreview(
       for (const [contractKey, group] of contractGroups) {
         const mapped = mapToQuickBooksItem('CONTRACT', '');
         const lineItem = makeLineItem(
-          ownerCode, billingDate, mapped.item,
+          customerJob, billingDate, mapped.item,
           `${mapped.description} (${contractKey})`,
           group.count, Math.round((group.amount / group.count) * 100) / 100
         );
@@ -272,7 +274,7 @@ export function buildPreview(
       });
       for (const addon of ownerAddOns) {
         const mapped = mapToQuickBooksItem('ADDON', addon.rateRuleLabel);
-        const lineItem = makeLineItem(ownerCode, billingDate, mapped.item, mapped.description, addon.quantity, addon.rate);
+        const lineItem = makeLineItem(customerJob, billingDate, mapped.item, mapped.description, addon.quantity, addon.rate);
         lineItem.amount = Math.round(addon.totalCost * 100) / 100;
         sources.addOns.items.push(lineItem);
         sources.addOns.subtotal += lineItem.amount;

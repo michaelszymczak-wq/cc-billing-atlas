@@ -172,7 +172,7 @@ export default function App() {
           />
         )}
         {page === 'qb-export' && config && (
-          <QBExportPage config={config} billingState={billingState} />
+          <QBExportPage config={config} billingState={billingState} onConfigChange={(updater) => setConfig(prev => prev ? updater(prev) : prev)} />
         )}
         {!config && (
           <div className="text-gray-400 text-sm">Loading configuration...</div>

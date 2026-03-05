@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { AppSettings } from './types';
+import { AppSettings, SessionData } from './types';
 import { CONFIG_PATH } from './config';
 
 // Firestore imports (lazy-loaded)
@@ -36,6 +36,7 @@ export function defaultSettings(): AppSettings {
       enabledSources: { actions: true, barrel: true, bulk: true, fruitIntake: true, addOns: true },
     },
     qbExportHistory: [],
+    qbCustomerMap: {},
     fruitIntakeSettings: {
       actionTypeKey: 'FRUITINTAKE',
       vintageLookback: 3,
@@ -78,6 +79,7 @@ function mergeWithDefaults(parsed: Record<string, unknown>): AppSettings {
     billableAddOns: Array.isArray(parsed.billableAddOns) ? parsed.billableAddOns : defaults.billableAddOns,
     qbExportSettings: (parsed.qbExportSettings as AppSettings['qbExportSettings']) ?? defaults.qbExportSettings,
     qbExportHistory: Array.isArray(parsed.qbExportHistory) ? parsed.qbExportHistory : defaults.qbExportHistory,
+    qbCustomerMap: (parsed.qbCustomerMap as Record<string, string>) ?? defaults.qbCustomerMap,
   };
 }
 
@@ -130,4 +132,22 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
     return saveToFirestore(settings);
   }
   return saveToFile(settings);
+}
+
+// ─── Session persistence (Firestore only, no file fallback) ───
+
+export async function saveSessionResult(sessionId: string, data: SessionData): Promise<void> {
+  if (!useFirestore) return;
+  const db = getFirestore();
+  await db.doc(`sessions/${sessionId}`).set(JSON.parse(JSON.stringify(data)));
+}
+
+export async function loadSessionResult(sessionId: string): Promise<SessionData | null> {
+  if (!useFirestore) return null;
+  const db = getFirestore();
+  const doc = await db.doc(`sessions/${sessionId}`).get();
+  if (doc.exists) {
+    return doc.data() as SessionData;
+  }
+  return null;
 }
