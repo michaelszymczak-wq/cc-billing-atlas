@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  getBillableAddOns, addBillableAddOn, deleteBillableAddOn,
+  getBillableAddOns, addBillableAddOn, deleteBillableAddOn, clearBillableAddOnsByMonth,
   BillableAddOn, RateRule,
 } from '../api/client';
 
@@ -20,6 +20,15 @@ interface NewRow {
 function todayStr(): string {
   const d = new Date();
   return d.toISOString().slice(0, 10);
+}
+
+function getPreviousMonth(): { yearMonth: string; label: string } {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+  return { yearMonth, label };
 }
 
 export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAddOnsPageProps) {
@@ -78,6 +87,19 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
     }
   };
 
+  const prevMonth = getPreviousMonth();
+  const prevMonthCount = addOns.filter((a) => a.date.startsWith(prevMonth.yearMonth)).length;
+
+  const handleClearMonth = async () => {
+    if (!window.confirm(`Clear ${prevMonthCount} add-on(s) from ${prevMonth.label}?`)) return;
+    try {
+      const updated = await clearBillableAddOnsByMonth(prevMonth.yearMonth);
+      setAddOns(updated);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       const updated = await deleteBillableAddOn(id);
@@ -95,12 +117,21 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Billable Add-Ons</h2>
         {!newRow && (
-          <button
-            onClick={handleAdd}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-          >
-            Add Row
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleClearMonth}
+              disabled={prevMonthCount === 0}
+              className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Clear {prevMonth.label} ({prevMonthCount})
+            </button>
+            <button
+              onClick={handleAdd}
+              className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+            >
+              Add Row
+            </button>
+          </div>
         )}
       </div>
 

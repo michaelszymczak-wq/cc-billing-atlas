@@ -355,6 +355,14 @@ export async function addBillableAddOn(addOn: Omit<BillableAddOn, 'id'>): Promis
   return res.json();
 }
 
+export async function clearBillableAddOnsByMonth(yearMonth: string): Promise<BillableAddOn[]> {
+  const res = await fetch(`${BASE_URL}/billable-add-ons/clear-month/${encodeURIComponent(yearMonth)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to clear billable add-ons');
+  return res.json();
+}
+
 export async function deleteBillableAddOn(id: string): Promise<BillableAddOn[]> {
   const res = await fetch(`${BASE_URL}/billable-add-ons/${encodeURIComponent(id)}`, {
     method: 'DELETE',

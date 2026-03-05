@@ -41,6 +41,15 @@ router.post('/', (req: Request, res: Response) => {
   res.json(settings.billableAddOns);
 });
 
+// DELETE /api/billable-add-ons/clear-month/:yearMonth — remove all rows for a given month
+router.delete('/clear-month/:yearMonth', (req: Request, res: Response) => {
+  const { yearMonth } = req.params; // e.g. "2026-02"
+  const settings = loadSettings();
+  settings.billableAddOns = settings.billableAddOns.filter((a) => !a.date.startsWith(yearMonth));
+  saveSettings(settings);
+  res.json(settings.billableAddOns);
+});
+
 // DELETE /api/billable-add-ons/:id — remove a row by ID
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
