@@ -6,7 +6,7 @@ import { applyRateMapping } from '../services/rateMapper';
 import { runBulkInventory } from '../services/bulkInventory';
 import { runBarrelInventory } from '../services/barrelInventory';
 import { generateExcel } from '../services/excelExport';
-import { loadSettings } from './settings';
+import { loadSettings } from '../persistence';
 
 const router = Router();
 
@@ -54,7 +54,7 @@ router.get('/billing-progress', (req: Request, res: Response) => {
 router.post('/run-billing', async (req: Request, res: Response) => {
   const body = req.body as BillingRequest;
   const { month, year, rateRules, steps } = body;
-  const settings = loadSettings();
+  const settings = await loadSettings();
 
   if (!settings.token || !settings.wineryId) {
     res.status(400).json({ error: 'Token and Winery ID must be configured in Settings.' });
@@ -91,7 +91,7 @@ router.get('/export-excel', async (req: Request, res: Response) => {
   }
 
   try {
-    const currentSettings = loadSettings();
+    const currentSettings = await loadSettings();
     const fruitIntakeRecords = currentSettings.fruitIntake?.records || [];
     const billingMonth = req.query.billingMonth as string | undefined;
 
@@ -187,7 +187,7 @@ async function runBillingPipeline(
     if (steps.includes('barrels')) {
       try {
         onProgress({ step: 'barrels', message: 'Starting barrel inventory billing...', pct: 60 });
-        const currentSettings = loadSettings();
+        const currentSettings = await loadSettings();
         const barrelSnapshots = currentSettings.barrelSnapshots ?? { snap1Day: 1, snap2Day: 15, snap3Day: 'last' as const };
 
         result.barrelInventory = await runBarrelInventory(

@@ -1,20 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { loadSettings } from './settings';
-import { sseClients, emitProgress, generateSessionId } from './actions';
+import { loadSettings, saveSettings } from '../persistence';
+import { emitProgress, generateSessionId } from './actions';
 import { runFruitIntake, recalculateRecord } from '../services/fruitIntakeService';
 
 const router = Router();
 
-import * as fs from 'fs';
-import { CONFIG_PATH } from '../config';
-
-function saveConfig(settings: ReturnType<typeof loadSettings>): void {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf-8');
-}
-
 // POST /api/fruit-intake/run — run fruit intake fetch and processing
 router.post('/run', async (req: Request, res: Response) => {
-  const settings = loadSettings();
+  const settings = await loadSettings();
 
   if (!settings.token || !settings.wineryId) {
     res.status(400).json({ error: 'Token and Winery ID must be configured in Settings.' });
@@ -26,7 +19,7 @@ router.post('/run', async (req: Request, res: Response) => {
   // If customer map was provided, save it first
   if (customerMap) {
     settings.customerMap = customerMap;
-    saveConfig(settings);
+    await saveSettings(settings);
   }
 
   const sessionId = generateSessionId();
@@ -49,9 +42,9 @@ router.post('/run', async (req: Request, res: Response) => {
     );
 
     // Save result to config
-    const current = loadSettings();
+    const current = await loadSettings();
     current.fruitIntake = result;
-    saveConfig(current);
+    await saveSettings(current);
 
     onProgress({ step: 'complete', message: 'Fruit intake run complete!', pct: 100 });
   } catch (err) {
@@ -64,21 +57,21 @@ router.post('/run', async (req: Request, res: Response) => {
 });
 
 // GET /api/fruit-intake/saved — get saved fruit intake data
-router.get('/saved', (_req: Request, res: Response) => {
-  const settings = loadSettings();
+router.get('/saved', async (_req: Request, res: Response) => {
+  const settings = await loadSettings();
   res.json(settings.fruitIntake || null);
 });
 
 // DELETE /api/fruit-intake/saved — clear saved fruit intake data
-router.delete('/saved', (_req: Request, res: Response) => {
-  const settings = loadSettings();
+router.delete('/saved', async (_req: Request, res: Response) => {
+  const settings = await loadSettings();
   settings.fruitIntake = null;
-  saveConfig(settings);
+  await saveSettings(settings);
   res.json({ success: true });
 });
 
 // PUT /api/fruit-intake/records/:recordId — update contract length and recalculate
-router.put('/records/:recordId', (req: Request, res: Response) => {
+router.put('/records/:recordId', async (req: Request, res: Response) => {
   const { recordId } = req.params;
   const { contractLengthMonths } = req.body as { contractLengthMonths: number };
 
@@ -87,7 +80,7 @@ router.put('/records/:recordId', (req: Request, res: Response) => {
     return;
   }
 
-  const settings = loadSettings();
+  const settings = await loadSettings();
   const fruitIntake = settings.fruitIntake;
 
   if (!fruitIntake || !fruitIntake.records) {
@@ -105,7 +98,7 @@ router.put('/records/:recordId', (req: Request, res: Response) => {
   fruitIntake.records[idx] = recalculateRecord(fruitIntake.records[idx], contractLengthMonths, rates);
 
   settings.fruitIntake = fruitIntake;
-  saveConfig(settings);
+  await saveSettings(settings);
 
   res.json(fruitIntake);
 });

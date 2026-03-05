@@ -1,15 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { sessions } from './actions';
-import { loadSettings } from './settings';
+import { loadSettings, saveSettings } from '../persistence';
 import { buildPreview, generateCSV, getShortMonthYear } from '../services/qbExport';
 import { QBExportRecord } from '../types';
-import * as fs from 'fs';
-import { CONFIG_PATH } from '../config';
 
 const router = Router();
 
 // POST /preview — generate preview data
-router.post('/preview', (req: Request, res: Response) => {
+router.post('/preview', async (req: Request, res: Response) => {
   const { sessionId, month, year, excludedCustomers, enabledSources } = req.body as {
     sessionId: string;
     month: string;
@@ -24,7 +22,7 @@ router.post('/preview', (req: Request, res: Response) => {
     return;
   }
 
-  const settings = loadSettings();
+  const settings = await loadSettings();
   const qbSettings = settings.qbExportSettings;
   const excluded = excludedCustomers ?? qbSettings.excludedCustomers;
   const sources = enabledSources ?? qbSettings.enabledSources;
@@ -47,7 +45,7 @@ router.post('/preview', (req: Request, res: Response) => {
 });
 
 // POST / — generate and download CSV
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { sessionId, month, year, excludedCustomers, enabledSources } = req.body as {
     sessionId: string;
     month: string;
@@ -62,7 +60,7 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
 
-  const settings = loadSettings();
+  const settings = await loadSettings();
   const qbSettings = settings.qbExportSettings;
   const excluded = excludedCustomers ?? qbSettings.excludedCustomers;
   const sources = enabledSources ?? qbSettings.enabledSources;
@@ -101,7 +99,7 @@ router.post('/', (req: Request, res: Response) => {
   // Save updated settings with new history
   if (excludedCustomers) settings.qbExportSettings.excludedCustomers = excludedCustomers;
   if (enabledSources) settings.qbExportSettings.enabledSources = enabledSources;
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  await saveSettings(settings);
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -109,8 +107,8 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 // GET /history — return export history
-router.get('/history', (_req: Request, res: Response) => {
-  const settings = loadSettings();
+router.get('/history', async (_req: Request, res: Response) => {
+  const settings = await loadSettings();
   res.json(settings.qbExportHistory);
 });
 

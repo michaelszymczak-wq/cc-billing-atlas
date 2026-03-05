@@ -1,25 +1,19 @@
 import { Router, Request, Response } from 'express';
-import { loadSettings } from './settings';
-import * as fs from 'fs';
+import { loadSettings, saveSettings } from '../persistence';
 import { BillableAddOn } from '../types';
-import { CONFIG_PATH } from '../config';
 
 const router = Router();
 
-function saveSettings(settings: ReturnType<typeof loadSettings>): void {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf-8');
-}
-
 // GET /api/billable-add-ons — return all add-on rows
-router.get('/', (_req: Request, res: Response) => {
-  const settings = loadSettings();
+router.get('/', async (_req: Request, res: Response) => {
+  const settings = await loadSettings();
   res.json(settings.billableAddOns);
 });
 
 // POST /api/billable-add-ons — add a new row
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const body = req.body as Omit<BillableAddOn, 'id'>;
-  const settings = loadSettings();
+  const settings = await loadSettings();
 
   const newAddOn: BillableAddOn = {
     id: `addon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -35,25 +29,25 @@ router.post('/', (req: Request, res: Response) => {
   };
 
   settings.billableAddOns.push(newAddOn);
-  saveSettings(settings);
+  await saveSettings(settings);
   res.json(settings.billableAddOns);
 });
 
 // DELETE /api/billable-add-ons/clear-month/:yearMonth — remove all rows for a given month
-router.delete('/clear-month/:yearMonth', (req: Request, res: Response) => {
+router.delete('/clear-month/:yearMonth', async (req: Request, res: Response) => {
   const { yearMonth } = req.params; // e.g. "2026-02"
-  const settings = loadSettings();
+  const settings = await loadSettings();
   settings.billableAddOns = settings.billableAddOns.filter((a) => !a.date.startsWith(yearMonth));
-  saveSettings(settings);
+  await saveSettings(settings);
   res.json(settings.billableAddOns);
 });
 
 // DELETE /api/billable-add-ons/:id — remove a row by ID
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const settings = loadSettings();
+  const settings = await loadSettings();
   settings.billableAddOns = settings.billableAddOns.filter((a) => a.id !== id);
-  saveSettings(settings);
+  await saveSettings(settings);
   res.json(settings.billableAddOns);
 });
 

@@ -31,11 +31,8 @@ RUN npm ci --omit=dev
 COPY --from=build /app/backend/dist backend/dist
 COPY --from=build /app/backend/public backend/public
 
-# Create data directory for config persistence
-RUN mkdir -p /data
-
 ENV PORT=3001
-ENV CONFIG_PATH=/data/.innovint-billing-config.json
+ENV USE_FIRESTORE=true
 
 EXPOSE 3001
 
