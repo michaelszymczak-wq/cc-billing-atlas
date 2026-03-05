@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SettingsPanel from './components/SettingsPanel';
 import BillingControls, { BillingRunState, defaultBillingRunState } from './components/BillingControls';
 import RateTableManager from './components/RateTableManager';
+import FruitIntakePage from './components/FruitIntakePage';
+import BillableAddOnsPage from './components/BillableAddOnsPage';
 import { getSettings, RateRule, AppConfig } from './api/client';
 
-type Page = 'billing' | 'rate-table' | 'settings';
+type Page = 'billing' | 'rate-table' | 'fruit-intake' | 'add-ons' | 'settings';
 
 export default function App() {
   const [page, setPage] = useState<Page>('billing');
@@ -32,6 +34,10 @@ export default function App() {
     setConfig((prev) => prev ? { ...prev, rateRules: rules } : prev);
   };
 
+  const handleCustomerMapChange = (map: Record<string, string>) => {
+    setConfig((prev) => prev ? { ...prev, customerMap: map } : prev);
+  };
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -47,6 +53,16 @@ export default function App() {
             active={page === 'rate-table'}
             onClick={() => setPage('rate-table')}
             badge={config?.rateRules.length ? String(config.rateRules.length) : undefined}
+          />
+          <NavItem
+            label="Fruit Intake"
+            active={page === 'fruit-intake'}
+            onClick={() => setPage('fruit-intake')}
+          />
+          <NavItem
+            label="Add-Ons"
+            active={page === 'add-ons'}
+            onClick={() => setPage('add-ons')}
           />
           <NavItem
             label="Settings"
@@ -76,12 +92,25 @@ export default function App() {
                 return typeof updater === 'function' ? updater(prev) : updater;
               })
             }
+            onNavigate={(p) => setPage(p as Page)}
           />
         )}
         {page === 'rate-table' && config && (
           <RateTableManager
             rules={config.rateRules}
             onRulesChange={handleRulesChange}
+          />
+        )}
+        {page === 'fruit-intake' && config && (
+          <FruitIntakePage
+            customerMap={config.customerMap || {}}
+            onCustomerMapChange={handleCustomerMapChange}
+          />
+        )}
+        {page === 'add-ons' && config && (
+          <BillableAddOnsPage
+            rateRules={config.rateRules}
+            ownerCodes={[...new Set(Object.values(config.customerMap || {}))].sort()}
           />
         )}
         {!config && (

@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import settingsRouter from './routes/settings';
 import actionsRouter from './routes/actions';
+import fruitIntakeRouter from './routes/fruitIntake';
+import billableAddOnsRouter from './routes/billableAddOns';
 
 const app = express();
 const PORT = 3001;
@@ -15,6 +17,8 @@ app.use(express.json({ limit: '10mb' }));
 // Routes
 app.use('/api/settings', settingsRouter);
 app.use('/api', actionsRouter);
+app.use('/api/fruit-intake', fruitIntakeRouter);
+app.use('/api/billable-add-ons', billableAddOnsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

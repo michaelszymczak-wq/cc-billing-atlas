@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { AppSettings, BarrelSnapshots, RateRule } from '../types';
+import { AppSettings, BarrelSnapshots, BillableAddOn, FruitIntakeSettings, RateRule } from '../types';
 
 const router = Router();
 const CONFIG_PATH = path.join(os.homedir(), '.innovint-billing-config.json');
@@ -15,6 +15,33 @@ function defaultSettings(): AppSettings {
     lastUsedMonth: 'January',
     lastUsedYear: new Date().getFullYear(),
     barrelSnapshots: { snap1Day: 1, snap2Day: 15, snap3Day: 'last' },
+    fruitIntake: null,
+    customerMap: {},
+    billableAddOns: [],
+    fruitIntakeSettings: {
+      actionTypeKey: 'FRUITINTAKE',
+      vintageLookback: 3,
+      apiPageDelaySeconds: 5,
+      contractLengthRules: [
+        { color: 'red', varietal: '', months: 22 },
+        { color: 'white', varietal: 'chardonnay', months: 12 },
+        { color: 'white', varietal: '', months: 9 },
+        { color: 'rosé', varietal: '', months: 9 },
+        { color: 'rose', varietal: '', months: 9 },
+        { color: 'orange', varietal: '', months: 9 },
+      ],
+      rates: [
+        { vintage: 2026, contractMonths: 9, ratePerTon: 3100 },
+        { vintage: 2026, contractMonths: 12, ratePerTon: 3150 },
+        { vintage: 2026, contractMonths: 22, ratePerTon: 4600 },
+        { vintage: 2025, contractMonths: 9, ratePerTon: 2950 },
+        { vintage: 2025, contractMonths: 12, ratePerTon: 3150 },
+        { vintage: 2025, contractMonths: 22, ratePerTon: 4600 },
+        { vintage: 2024, contractMonths: 9, ratePerTon: 2800 },
+        { vintage: 2024, contractMonths: 12, ratePerTon: 3000 },
+        { vintage: 2024, contractMonths: 22, ratePerTon: 4300 },
+      ],
+    },
   };
 }
 
@@ -31,6 +58,10 @@ export function loadSettings(): AppSettings {
         lastUsedMonth: parsed.lastUsedMonth ?? defaults.lastUsedMonth,
         lastUsedYear: parsed.lastUsedYear ?? defaults.lastUsedYear,
         barrelSnapshots: parsed.barrelSnapshots ?? defaults.barrelSnapshots,
+        fruitIntake: parsed.fruitIntake ?? defaults.fruitIntake,
+        customerMap: parsed.customerMap ?? defaults.customerMap,
+        fruitIntakeSettings: parsed.fruitIntakeSettings ?? defaults.fruitIntakeSettings,
+        billableAddOns: Array.isArray(parsed.billableAddOns) ? parsed.billableAddOns : defaults.billableAddOns,
       };
     }
   } catch {
@@ -54,6 +85,9 @@ router.get('/', (_req: Request, res: Response) => {
     lastUsedMonth: settings.lastUsedMonth,
     lastUsedYear: settings.lastUsedYear,
     barrelSnapshots: settings.barrelSnapshots,
+    customerMap: settings.customerMap,
+    fruitIntakeSettings: settings.fruitIntakeSettings,
+    billableAddOns: settings.billableAddOns,
   });
 });
 
@@ -69,6 +103,10 @@ router.post('/', (req: Request, res: Response) => {
     lastUsedMonth: body.lastUsedMonth !== undefined ? body.lastUsedMonth : current.lastUsedMonth,
     lastUsedYear: body.lastUsedYear !== undefined ? body.lastUsedYear : current.lastUsedYear,
     barrelSnapshots: body.barrelSnapshots !== undefined ? body.barrelSnapshots : current.barrelSnapshots,
+    fruitIntake: current.fruitIntake,
+    customerMap: (body as Record<string, unknown>).customerMap !== undefined ? (body as Record<string, unknown>).customerMap as Record<string, string> : current.customerMap,
+    fruitIntakeSettings: (body as Record<string, unknown>).fruitIntakeSettings !== undefined ? (body as Record<string, unknown>).fruitIntakeSettings as FruitIntakeSettings : current.fruitIntakeSettings,
+    billableAddOns: (body as Record<string, unknown>).billableAddOns !== undefined ? (body as Record<string, unknown>).billableAddOns as BillableAddOn[] : current.billableAddOns,
   };
 
   saveSettings(updated);
@@ -115,6 +153,34 @@ router.put('/barrel-snapshots', (req: Request, res: Response) => {
   };
   saveSettings(current);
   res.json({ success: true, barrelSnapshots: current.barrelSnapshots });
+});
+
+// PUT /api/settings/fruit-intake-settings — save fruit intake configuration
+router.put('/fruit-intake-settings', (req: Request, res: Response) => {
+  const body = req.body as Partial<FruitIntakeSettings>;
+  const current = loadSettings();
+  current.fruitIntakeSettings = {
+    actionTypeKey: body.actionTypeKey ?? current.fruitIntakeSettings.actionTypeKey,
+    vintageLookback: body.vintageLookback ?? current.fruitIntakeSettings.vintageLookback,
+    apiPageDelaySeconds: body.apiPageDelaySeconds ?? current.fruitIntakeSettings.apiPageDelaySeconds,
+    contractLengthRules: body.contractLengthRules ?? current.fruitIntakeSettings.contractLengthRules,
+    rates: body.rates ?? current.fruitIntakeSettings.rates,
+  };
+  saveSettings(current);
+  res.json({ success: true, fruitIntakeSettings: current.fruitIntakeSettings });
+});
+
+// PUT /api/settings/customer-map — save customer name→code mapping
+router.put('/customer-map', (req: Request, res: Response) => {
+  const customerMap = req.body as Record<string, string>;
+  if (typeof customerMap !== 'object' || Array.isArray(customerMap)) {
+    res.status(400).json({ error: 'Expected an object mapping customer names to codes.' });
+    return;
+  }
+  const current = loadSettings();
+  current.customerMap = customerMap;
+  saveSettings(current);
+  res.json({ success: true, count: Object.keys(customerMap).length });
 });
 
 export default router;

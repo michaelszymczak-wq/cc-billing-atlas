@@ -228,6 +228,100 @@ export interface BillingResponse {
   };
 }
 
+// ─── Fruit Intake ───
+
+export interface FruitInstallment {
+  month: string;
+  amount: number;
+}
+
+export interface FruitIntakeRecord {
+  id: string;
+  eventId: string;
+  actionId: string;
+  vintage: number;
+  effectiveDate: string;
+  weighTagNumber: string;
+  ownerName: string;
+  ownerCode: string;
+  lotCode: string;
+  varietal: string;
+  color: string;
+  fruitWeightTons: number;
+  contractLengthMonths: number;
+  contractRatePerTon: number;
+  totalCost: number;
+  monthlyAmount: number;
+  contractStartMonth: string;
+  contractEndMonth: string;
+  installments: FruitInstallment[];
+  savedAt: string;
+}
+
+export interface FruitIntakeRunResult {
+  runId: string;
+  ranAt: string;
+  vintagesQueried: number[];
+  totalRecords: number;
+  newRecords: number;
+  duplicatesSkipped: number;
+  records: FruitIntakeRecord[];
+}
+
+export interface ContractLengthRule {
+  color: string;
+  varietal: string;
+  months: number;
+}
+
+export interface FruitIntakeRate {
+  vintage: number;
+  contractMonths: number;
+  ratePerTon: number;
+}
+
+export interface FruitIntakeSettings {
+  actionTypeKey: string;
+  vintageLookback: number;
+  apiPageDelaySeconds: number;
+  contractLengthRules: ContractLengthRule[];
+  rates: FruitIntakeRate[];
+}
+
+// ─── Fruit Intake API Response ───
+
+export interface FruitIntakeApiItem {
+  eventId: number;
+  actionId: number;
+  weighTagNumber: string;
+  effectiveAt: string;
+  vintage: number;
+  voided: boolean;
+  fruitWeight: { value: number; unit: string };
+  lot: { _id: number; lotCode: string; fruitLot?: boolean; color?: string };
+  access?: { owners?: Array<{ _id: number; name: string }> };
+  varietal?: { _id: number; name: string };
+  vineyard?: { _id: number; name: string };
+  block?: { _id: number; name: string };
+  appellation?: { _id: number; name: string };
+  grower?: { _id: number; name: string };
+}
+
+// ─── Billable Add-Ons ───
+
+export interface BillableAddOn {
+  id: string;
+  date: string;            // YYYY-MM-DD
+  rateRuleId: string;      // references RateRule.id
+  rateRuleLabel: string;   // snapshot of label at time of creation
+  quantity: number;         // up to 3 decimal places
+  ownerCode: string;
+  rate: number;             // from RateRule.rate
+  billingUnit: string;      // from RateRule.billingUnit
+  totalCost: number;        // rate * quantity
+  notes: string;
+}
+
 // ─── Settings / Config ───
 
 export interface AppSettings {
@@ -237,6 +331,10 @@ export interface AppSettings {
   lastUsedMonth: string;
   lastUsedYear: number;
   barrelSnapshots: BarrelSnapshots;
+  fruitIntake: FruitIntakeRunResult | null;
+  customerMap: Record<string, string>;
+  fruitIntakeSettings: FruitIntakeSettings;
+  billableAddOns: BillableAddOn[];
 }
 
 // ─── SSE Progress ───
