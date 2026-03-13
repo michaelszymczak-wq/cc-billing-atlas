@@ -92,24 +92,13 @@ export async function generateExcel(
   // ─── Bulk Inventory Tab ───
   const bulkSheet = workbook.addWorksheet('Bulk Inventory');
   bulkSheet.columns = [
-    { header: 'Owner Code', key: 'ownerCode', width: 12 },
-    { header: 'Lot Code', key: 'lotCode', width: 25 },
-    { header: 'Tank Volume', key: 'tankVolume', width: 14 },
-    { header: 'Barrel Count', key: 'barrelCount', width: 14 },
-    { header: 'Keg Count', key: 'kegCount', width: 12 },
-    { header: 'Tank Days', key: 'tankDaysPresent', width: 12 },
-    { header: 'Barrel Days', key: 'barrelDaysPresent', width: 12 },
-    { header: 'Keg Days', key: 'kegDaysPresent', width: 12 },
-    { header: 'Total Days', key: 'totalDays', width: 12 },
-    { header: 'Tank %', key: 'tankPct', width: 10 },
-    { header: 'Barrel %', key: 'barrelPct', width: 10 },
-    { header: 'Keg %', key: 'kegPct', width: 10 },
-    { header: 'Tank Rate', key: 'tankRate', width: 12 },
-    { header: 'Barrel Rate', key: 'barrelRate', width: 12 },
-    { header: 'Keg Rate', key: 'kegRate', width: 12 },
-    { header: 'Tank Cost', key: 'tankCost', width: 14 },
-    { header: 'Barrel Cost', key: 'barrelCost', width: 14 },
-    { header: 'Keg Cost', key: 'kegCost', width: 14 },
+    { header: 'Owner Code', key: 'ownerCode', width: 14 },
+    { header: 'Snap 1 (gal)', key: 'snap1Volume', width: 14 },
+    { header: 'Snap 2 (gal)', key: 'snap2Volume', width: 14 },
+    { header: 'Snap 3 (gal)', key: 'snap3Volume', width: 14 },
+    { header: 'Billing Vol', key: 'billingVolume', width: 14 },
+    { header: 'Proration', key: 'proration', width: 12 },
+    { header: 'Rate', key: 'rate', width: 12 },
     { header: 'Total Cost', key: 'totalCost', width: 14 },
   ];
 
@@ -121,15 +110,11 @@ export async function generateExcel(
     bulkSheet.addRow(row);
   }
 
-  ['tankRate', 'barrelRate', 'kegRate', 'tankCost', 'barrelCost', 'kegCost', 'totalCost'].forEach((key) => {
-    const col = bulkSheet.getColumn(key);
-    col.numFmt = '$#,##0.00';
+  ['rate', 'totalCost'].forEach((key) => {
+    bulkSheet.getColumn(key).numFmt = '$#,##0.00';
   });
 
-  ['tankPct', 'barrelPct', 'kegPct'].forEach((key) => {
-    const col = bulkSheet.getColumn(key);
-    col.numFmt = '0.00"%"';
-  });
+  bulkSheet.getColumn('proration').numFmt = '0%';
 
   // ─── Audit Report Tab ───
   const auditSheet = workbook.addWorksheet('Audit Report');

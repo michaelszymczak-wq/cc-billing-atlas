@@ -2,8 +2,23 @@
   "hosting": {
     "public": "backend/public",
     "rewrites": [
-      { "source": "/api/**", "run": { "serviceId": "innovint-billing", "region": "us-central1" } },
-      { "source": "**", "destination": "/index.html" }
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "cc-billing-atlas",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
     ]
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

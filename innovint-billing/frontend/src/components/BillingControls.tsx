@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  runBilling, subscribeToBillingProgress, getBillingResults,
-  getExcelDownloadUrl, BillingResults, RateRule,
+  runBilling, pollBillingProgress, getBillingResults,
+  downloadExcel, BillingResults, RateRule, ActionRow,
   saveBillingPrefs, getFruitIntakeSaved, FruitIntakeRunResult,
 } from '../api/client';
 import ProgressBar from './ProgressBar';
@@ -94,7 +94,7 @@ export default function BillingControls({
 
       onBillingStateChange((prev) => ({ ...prev, sessionId: sid }));
 
-      const es = subscribeToBillingProgress(
+      pollBillingProgress(
         sid,
         (event) => {
           onBillingStateChange((prev) => {
@@ -127,7 +127,6 @@ export default function BillingControls({
           });
 
           if (event.step === 'complete') {
-            es.close();
             setTimeout(async () => {
               try {
                 const data = await getBillingResults(sid);
@@ -143,20 +142,9 @@ export default function BillingControls({
           }
 
           if (event.step === 'error') {
-            es.close();
             onBillingStateChange((prev) => ({ ...prev, running: false }));
           }
         },
-        () => {
-          setTimeout(async () => {
-            try {
-              const data = await getBillingResults(sid);
-              onBillingStateChange((prev) => ({ ...prev, results: data, running: false }));
-            } catch {
-              onBillingStateChange((prev) => ({ ...prev, running: false }));
-            }
-          }, 1000);
-        }
       );
     } catch (err) {
       onBillingStateChange((prev) => ({
@@ -166,6 +154,46 @@ export default function BillingControls({
       }));
     }
   }, [month, year, rateRules, onBillingStateChange]);
+
+  const allOwnerCodes = useMemo(() => {
+    if (!results) return [];
+    const codes = new Set<string>();
+    for (const r of results.actions) codes.add(r.ownerCode);
+    for (const r of results.auditRows) codes.add(r.ownerCode);
+    return [...codes].sort();
+  }, [results]);
+
+  const handleRectify = useCallback((auditIndex: number, actionRow: ActionRow) => {
+    onBillingStateChange((prev) => {
+      if (!prev.results) return prev;
+      const newAudit = prev.results.auditRows.filter((_, i) => i !== auditIndex);
+      // Replace the original unmatched row in actions (same actionId) instead of appending
+      const existingIdx = prev.results.actions.findIndex(
+        (r) => r.actionId === actionRow.actionId && !r.matched
+      );
+      const newActions = [...prev.results.actions];
+      if (existingIdx >= 0) {
+        newActions[existingIdx] = actionRow;
+      } else {
+        newActions.push(actionRow);
+      }
+      const totalBilled = newActions.filter((r) => r.matched).reduce((sum, r) => sum + r.total, 0);
+      return {
+        ...prev,
+        results: {
+          ...prev.results,
+          actions: newActions,
+          auditRows: newAudit,
+          summary: {
+            ...prev.results.summary,
+            totalActions: newActions.length,
+            totalBilled,
+            auditCount: newAudit.length,
+          },
+        },
+      };
+    });
+  }, [onBillingStateChange]);
 
   const enabledRuleCount = rateRules.filter((r) => r.enabled).length;
 
@@ -238,7 +266,7 @@ export default function BillingControls({
       <button
         onClick={handleRun}
         disabled={running || !hasSettings}
-        className="px-6 py-2.5 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="px-6 py-2.5 bg-violet-600 text-white rounded-md font-medium hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {running ? 'Running...' : 'Run Billing'}
       </button>
@@ -262,13 +290,12 @@ export default function BillingControls({
             <SummaryCard label="Barrel Owners" value={results.summary.barrelOwners} />
           </div>
 
-          <a
-            href={getExcelDownloadUrl(sessionId)}
-            download
-            className="inline-block px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
+          <button
+            onClick={() => downloadExcel(sessionId)}
+            className="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
           >
             Download Excel
-          </a>
+          </button>
 
           <TabView
             tabs={[
@@ -294,7 +321,14 @@ export default function BillingControls({
                 id: 'audit',
                 label: 'Audit',
                 badge: results.auditRows.length,
-                content: <AuditTable rows={results.auditRows} />,
+                content: (
+                  <AuditTable
+                    rows={results.auditRows}
+                    rateRules={rateRules}
+                    allOwnerCodes={allOwnerCodes}
+                    onRectify={handleRectify}
+                  />
+                ),
               },
               {
                 id: 'summary',
@@ -317,14 +351,14 @@ export default function BillingControls({
   );
 }
 
-function SummaryCard({ label, value, color = 'blue' }: { label: string; value: string | number; color?: string }) {
+function SummaryCard({ label, value, color = 'violet' }: { label: string; value: string | number; color?: string }) {
   const bgMap: Record<string, string> = {
-    blue: 'bg-blue-50 border-blue-200',
+    violet: 'bg-violet-50 border-violet-200',
     amber: 'bg-amber-50 border-amber-200',
     green: 'bg-green-50 border-green-200',
   };
   return (
-    <div className={`p-4 rounded-lg border ${bgMap[color] || bgMap.blue}`}>
+    <div className={`p-4 rounded-lg border ${bgMap[color] || bgMap.violet}`}>
       <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold mt-1">{value}</p>
     </div>

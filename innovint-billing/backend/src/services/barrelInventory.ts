@@ -70,6 +70,8 @@ interface VesselRow {
   vesselCode: string;
   fill: string;
   vesselType: string;
+  owner: string;
+  style: string;
 }
 
 async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
@@ -89,6 +91,8 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
   const vesselCodeIdx = headerRow.findIndex((h: string) => h.includes('vessel code'));
   const fillIdx = headerRow.findIndex((h: string) => h.includes('fill'));
   const vesselTypeIdx = headerRow.findIndex((h: string) => h.includes('vessel type'));
+  const ownerIdx = headerRow.findIndex((h: string) => h.includes('owner') || h.includes('access'));
+  const styleIdx = headerRow.findIndex((h: string) => h === 'style');
 
   const result: VesselRow[] = [];
   for (let i = 3; i < allRows.length; i++) {
@@ -97,6 +101,8 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
       vesselCode: vesselCodeIdx >= 0 ? (row[vesselCodeIdx] ?? '') : '',
       fill: fillIdx >= 0 ? (row[fillIdx] ?? '') : '',
       vesselType: vesselTypeIdx >= 0 ? (row[vesselTypeIdx] ?? '') : '',
+      owner: ownerIdx >= 0 ? (row[ownerIdx] ?? '').trim() : '',
+      style: styleIdx >= 0 ? (row[styleIdx] ?? '').trim() : '',
     });
   }
 
@@ -108,17 +114,25 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
 function countEmptyBarrels(rows: VesselRow[]): Map<string, number> {
   const counts = new Map<string, number>();
 
-  for (const { vesselCode, fill, vesselType } of rows) {
+  for (const { fill, vesselType, owner, style } of rows) {
     const fillValue = fill.trim();
     const fillNum = parseFloat(fillValue);
     const isEmpty = isNaN(fillNum) || fillNum === 0 || fillValue === '';
-    const isBarrel = vesselType.toUpperCase() === 'BARREL';
-    const code = vesselCode.trim();
-    const hasValidCode = code.length >= 5;
+    const vt = vesselType.toUpperCase();
+    const isBarrel = vt === 'BARREL';
+    const isTirage = vt === 'TIRAGE';
+    const ownerCode = owner.trim();
 
-    if (isEmpty && isBarrel && hasValidCode) {
-      const ownerCode = code.substring(2, 5);
-      counts.set(ownerCode, (counts.get(ownerCode) ?? 0) + 1);
+    if (isEmpty && (isBarrel || isTirage) && ownerCode) {
+      let key: string;
+      if (isTirage) {
+        key = `${ownerCode}-Tirage`;
+      } else if (style.toUpperCase().includes('PUNCHEON')) {
+        key = `${ownerCode}-Puncheon`;
+      } else {
+        key = ownerCode;
+      }
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
 
@@ -127,13 +141,27 @@ function countEmptyBarrels(rows: VesselRow[]): Map<string, number> {
 
 // ─── Rate rule matching ───
 
-function findBarrelStorageRule(rules: RateRule[]): RateRule | undefined {
+function findBarrelStorageRules(rules: RateRule[]): { regular?: RateRule; puncheon?: RateRule; tirage?: RateRule } {
   const keywords = ['EMPTY', 'BARREL', 'STORAGE'];
-  return rules.find((rule) => {
-    if (!rule.enabled) return false;
+  let regular: RateRule | undefined;
+  let puncheon: RateRule | undefined;
+  let tirage: RateRule | undefined;
+
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
     const combined = `${rule.actionType} ${rule.variation}`.toUpperCase();
-    return keywords.every((kw) => combined.includes(kw));
-  });
+    if (!keywords.every((kw) => combined.includes(kw))) continue;
+
+    if (combined.includes('TIRAGE')) {
+      tirage = rule;
+    } else if (combined.includes('PUNCHEON')) {
+      puncheon = rule;
+    } else if (!regular) {
+      regular = rule;
+    }
+  }
+
+  return { regular, puncheon, tirage };
 }
 
 // ─── Snapshot timestamp builder ───
@@ -226,22 +254,42 @@ export async function runBarrelInventory(
   const monthIndex = getMonthIndex(month);
   const totalDays = getDaysInMonth(month, year);
 
-  const matchedRule = findBarrelStorageRule(rateRules);
-  const rate = matchedRule?.rate ?? 0;
-  const setupFee = matchedRule?.setupFee ?? 0;
+  const { regular: regularRule, puncheon: puncheonRule, tirage: tirageRule } = findBarrelStorageRules(rateRules);
+  const regularRate = regularRule?.rate ?? 0;
+  const regularSetupFee = regularRule?.setupFee ?? 0;
+  const puncheonRate = puncheonRule?.rate ?? 0;
+  const puncheonSetupFee = puncheonRule?.setupFee ?? 0;
+  const tirageRate = tirageRule?.rate ?? 0;
+  const tirageSetupFee = tirageRule?.setupFee ?? 0;
 
-  if (!matchedRule) {
+  if (!regularRule && !puncheonRule && !tirageRule) {
     onProgress({
       step: 'barrels',
-      message: 'Warning: No Empty Barrel Storage rate rule found. Charges will be $0.',
+      message: 'Warning: No Empty Barrel Storage rate rules found. Charges will be $0.',
       pct: -1,
     });
   } else {
-    onProgress({
-      step: 'barrels',
-      message: `Using rate rule "${matchedRule.label}": $${rate}/barrel + $${setupFee} setup.`,
-      pct: -1,
-    });
+    if (regularRule) {
+      onProgress({
+        step: 'barrels',
+        message: `Regular rate: "${regularRule.label}": $${regularRate}/barrel + $${regularSetupFee} setup.`,
+        pct: -1,
+      });
+    }
+    if (puncheonRule) {
+      onProgress({
+        step: 'barrels',
+        message: `Puncheon rate: "${puncheonRule.label}": $${puncheonRate}/barrel + $${puncheonSetupFee} setup.`,
+        pct: -1,
+      });
+    }
+    if (tirageRule) {
+      onProgress({
+        step: 'barrels',
+        message: `Tirage rate: "${tirageRule.label}": $${tirageRate}/barrel + $${tirageSetupFee} setup.`,
+        pct: -1,
+      });
+    }
   }
 
   // Resolve snapshot days
@@ -279,6 +327,10 @@ export async function runBarrelInventory(
     const snap2 = snapCounts[1]?.get(ownerCode) ?? 0;
     const snap3 = snapCounts[2]?.get(ownerCode) ?? 0;
     const avgBarrels = Math.round(((snap1 + snap2 + snap3) / 3) * 100) / 100;
+    const isPuncheon = ownerCode.endsWith('-Puncheon');
+    const isTirage = ownerCode.endsWith('-Tirage');
+    const rate = isTirage ? tirageRate : isPuncheon ? puncheonRate : regularRate;
+    const setupFee = isTirage ? tirageSetupFee : isPuncheon ? puncheonSetupFee : regularSetupFee;
     const charge = Math.round((avgBarrels * rate + setupFee) * 100) / 100;
     billingRows.push({ ownerCode, snap1, snap2, snap3, avgBarrels, rate, charge });
   }

@@ -1,23 +1,28 @@
 {
-  "name": "innovint-billing-backend",
+  "name": "cc-billing-atlas-backend",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "seed-admin": "tsx src/seedAdmin.ts"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "csv-parse": "^6.1.0",
     "exceljs": "^4.4.0",
     "express": "^4.21.0",
-    "firebase-admin": "^13.7.0"
+    "firebase-admin": "^13.7.0",
+    "pdfkit": "^0.17.2"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
+    "@types/pdfkit": "^0.17.5",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

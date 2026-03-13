@@ -1,44 +1,10 @@
-import { BulkBillingRow, InventoryLot, LotSnapshot, ProgressEvent, RateRule } from '../types';
+import { BulkBillingRow, InventoryLot, ProgressEvent } from '../types';
 import { fetchInventorySnapshot, getDaysInMonth, getMonthIndex } from './innovintApi';
 
 const THROTTLE_MS = 1200;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function cleanKey(v: string): string {
-  return v.trim().toUpperCase().replace(/\s/g, '');
-}
-
-/**
- * Extract storage rates from rate rules.
- * Looks for enabled rules with actionType=STORAGE and variation=TANK/BARREL/KEG.
- * TANK is billed per gallon, BARREL and KEG per unit count.
- */
-function extractStorageRates(rules: RateRule[]): { TANK: number; BARREL: number; KEG: number } {
-  const rates = { TANK: 0, BARREL: 0, KEG: 0 };
-
-  for (const rule of rules) {
-    if (!rule.enabled) continue;
-    if (cleanKey(rule.actionType) !== 'STORAGE') continue;
-    const variation = cleanKey(rule.variation);
-    if (variation === 'TANK') rates.TANK = rule.rate;
-    else if (variation === 'BARREL') rates.BARREL = rule.rate;
-    else if (variation === 'KEG') rates.KEG = rule.rate;
-  }
-
-  return rates;
-}
-
-/**
- * Extract owner code from lot code (positions 4–6).
- */
-function lotOwnerCode(lotCode: string): string {
-  if (lotCode.length >= 7) {
-    return lotCode.substring(4, 7);
-  }
-  return 'UNK';
 }
 
 /**
@@ -50,225 +16,142 @@ function isBulkLot(item: InventoryLot): boolean {
 }
 
 /**
- * Accumulate a single day's inventory snapshot into the tracking map.
+ * Get owner code from the lot's access.owners[0].name field.
  */
-function accumulateSnapshot(
-  items: InventoryLot[],
-  dayKey: string,
-  lotMap: Map<string, LotSnapshot>,
-  admittedLots: Set<string>
-): void {
+function getOwnerCode(item: InventoryLot): string {
+  return item.access?.owners?.[0]?.name || 'UNK';
+}
+
+/**
+ * Aggregate a snapshot's bulk lots into per-customer volume totals.
+ */
+function aggregateSnapshot(items: InventoryLot[]): Map<string, number> {
+  const ownerVolumes = new Map<string, number>();
+
   for (const item of items) {
-    const code = item.lot?.lotCode;
-    if (!code) continue;
+    if (!isBulkLot(item)) continue;
 
-    // Once admitted (tagged BULK), always tracked
-    if (!admittedLots.has(code) && !isBulkLot(item)) {
-      continue;
-    }
-    admittedLots.add(code);
-
-    let snapshot = lotMap.get(code);
-    if (!snapshot) {
-      snapshot = {
-        lotCode: code,
-        ownerCode: lotOwnerCode(code),
-        totalVolume: 0,
-        tankVolume: 0,
-        barrelCount: 0,
-        kegCount: 0,
-        tankDays: new Set<string>(),
-        barrelDays: new Set<string>(),
-        kegDays: new Set<string>(),
-        maxBarrelCount: 0,
-        maxKegCount: 0,
-      };
-      lotMap.set(code, snapshot);
-    }
-
-    const totalVolume = item.volume?.value || 0;
-
-    // Check if any vessel is a TANK
-    const hasTank = item.vessels?.some(
-      (v) => (v.vesselType || '').toUpperCase() === 'TANK'
-    ) ?? false;
-
-    if (hasTank) {
-      // When lot is in a TANK, volume = lot contents; ignore barrels/kegs
-      snapshot.tankDays.add(dayKey);
-      snapshot.totalVolume = Math.max(snapshot.totalVolume, totalVolume);
-      snapshot.tankVolume = Math.max(snapshot.tankVolume, totalVolume);
-    } else {
-      // No tank — count barrels and kegs
-      let barrelCount = 0;
-      let kegCount = 0;
-
-      if (item.vessels) {
-        for (const vessel of item.vessels) {
-          const vt = (vessel.vesselType || '').toUpperCase();
-          if (vt === 'BARREL') {
-            barrelCount++;
-            snapshot.barrelDays.add(dayKey);
-          } else if (vt === 'KEG') {
-            kegCount++;
-            snapshot.kegDays.add(dayKey);
-          }
-        }
-      }
-
-      snapshot.totalVolume = Math.max(snapshot.totalVolume, totalVolume);
-      snapshot.maxBarrelCount = Math.max(snapshot.maxBarrelCount, barrelCount);
-      snapshot.maxKegCount = Math.max(snapshot.maxKegCount, kegCount);
-      snapshot.barrelCount = Math.max(snapshot.barrelCount, barrelCount);
-      snapshot.kegCount = Math.max(snapshot.kegCount, kegCount);
-    }
+    const ownerCode = getOwnerCode(item);
+    const volume = item.volume?.value || 0;
+    ownerVolumes.set(ownerCode, (ownerVolumes.get(ownerCode) || 0) + volume);
   }
+
+  return ownerVolumes;
 }
 
 /**
- * Build billing rows from accumulated lot snapshots.
- * TANK: billed by gallons (tankVolume * prorate * rate)
- * BARREL/KEG: billed by count (count * prorate * rate)
- */
-function buildBillingRows(
-  lotMap: Map<string, LotSnapshot>,
-  totalDays: number,
-  rates: { TANK: number; BARREL: number; KEG: number }
-): BulkBillingRow[] {
-  const rows: BulkBillingRow[] = [];
-
-  for (const snapshot of lotMap.values()) {
-    const tankDaysPresent = snapshot.tankDays.size;
-    const barrelDaysPresent = snapshot.barrelDays.size;
-    const kegDaysPresent = snapshot.kegDays.size;
-
-    const tankPct = (tankDaysPresent / totalDays) * 100;
-    const barrelPct = (barrelDaysPresent / totalDays) * 100;
-    const kegPct = (kegDaysPresent / totalDays) * 100;
-
-    const tankCost = snapshot.tankVolume * (tankPct / 100) * rates.TANK;
-    const barrelCost = snapshot.maxBarrelCount * (barrelPct / 100) * rates.BARREL;
-    const kegCost = snapshot.maxKegCount * (kegPct / 100) * rates.KEG;
-
-    rows.push({
-      ownerCode: snapshot.ownerCode,
-      lotCode: snapshot.lotCode,
-      tankVolume: snapshot.tankVolume,
-      barrelCount: snapshot.maxBarrelCount,
-      kegCount: snapshot.maxKegCount,
-      tankDaysPresent,
-      barrelDaysPresent,
-      kegDaysPresent,
-      totalDays,
-      tankPct: Math.round(tankPct * 100) / 100,
-      barrelPct: Math.round(barrelPct * 100) / 100,
-      kegPct: Math.round(kegPct * 100) / 100,
-      tankRate: rates.TANK,
-      barrelRate: rates.BARREL,
-      kegRate: rates.KEG,
-      tankCost: Math.round(tankCost * 100) / 100,
-      barrelCost: Math.round(barrelCost * 100) / 100,
-      kegCost: Math.round(kegCost * 100) / 100,
-      totalCost: Math.round((tankCost + barrelCost + kegCost) * 100) / 100,
-    });
-  }
-
-  // Sort: ownerCode ASC → lotCode ASC
-  rows.sort((a, b) => {
-    const oc = a.ownerCode.localeCompare(b.ownerCode);
-    if (oc !== 0) return oc;
-    return a.lotCode.localeCompare(b.lotCode);
-  });
-
-  return rows;
-}
-
-/**
- * Run the full bulk inventory billing process (Step 3).
- * Reads STORAGE rates from the rate rules table.
+ * Run the simplified bulk inventory billing process (Step 3).
+ * Takes 3 snapshots (day 1, day 15, last day), aggregates by customer,
+ * and applies 50%/100% proration.
  */
 export async function runBulkInventory(
   wineryId: string,
   token: string,
   month: string,
   year: number,
-  rateRules: RateRule[],
+  bulkStorageRate: number,
   onProgress: (event: ProgressEvent) => void
 ): Promise<BulkBillingRow[]> {
   const monthIndex = getMonthIndex(month);
   const totalDays = getDaysInMonth(month, year);
-  const rates = extractStorageRates(rateRules);
 
   onProgress({
     step: 'bulk',
-    message: `Starting bulk inventory for ${month} ${year} (${totalDays} days). Rates: Tank $${rates.TANK}/gal, Barrel $${rates.BARREL}/ea, Keg $${rates.KEG}/ea`,
+    message: `Starting bulk inventory for ${month} ${year}. Rate: $${bulkStorageRate}/gal`,
     pct: 60,
   });
 
-  if (rates.TANK === 0 && rates.BARREL === 0 && rates.KEG === 0) {
+  if (bulkStorageRate === 0) {
     onProgress({
       step: 'bulk',
-      message: 'Warning: All STORAGE rates are $0. Add STORAGE rules in the Rate Table to bill for bulk inventory.',
+      message: 'Warning: Bulk Storage Rate is $0. Set it in Settings to bill for bulk inventory.',
       pct: -1,
     });
   }
 
-  // Build timestamps: one per calendar day at 23:59:00 UTC
-  const timestamps: { day: number; ts: string; key: string }[] = [];
-  for (let day = 1; day <= totalDays; day++) {
+  // 3 snapshot days: day 1, day 15, last day of month
+  const snapDays = [1, 15, totalDays];
+  const snapTimestamps = snapDays.map((day) => {
     const date = new Date(Date.UTC(year, monthIndex, day, 23, 59, 0));
-    timestamps.push({
-      day,
-      ts: date.toISOString(),
-      key: `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-    });
-  }
+    return { day, ts: date.toISOString() };
+  });
 
-  const lotMap = new Map<string, LotSnapshot>();
-  const admittedLots = new Set<string>();
+  const snapResults: Map<string, number>[] = [];
 
-  for (let i = 0; i < timestamps.length; i++) {
-    const { day, ts, key } = timestamps[i];
+  for (let i = 0; i < snapTimestamps.length; i++) {
+    const { day, ts } = snapTimestamps[i];
 
     onProgress({
       step: 'bulk',
-      message: `Fetching inventory for day ${day}/${totalDays}...`,
-      pct: 60 + Math.round((i / totalDays) * 35),
+      message: `Fetching bulk inventory snapshot ${i + 1}/3 (day ${day})...`,
+      pct: 60 + Math.round((i / 3) * 30),
     });
 
     try {
       const lots = await fetchInventorySnapshot(wineryId, token, ts, (msg) => {
         onProgress({ step: 'bulk', message: msg, pct: -1 });
       });
-
-      accumulateSnapshot(lots, key, lotMap, admittedLots);
+      snapResults.push(aggregateSnapshot(lots));
     } catch (err) {
       onProgress({
         step: 'bulk',
-        message: `Warning: Failed to fetch day ${day}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Warning: Failed to fetch snapshot ${i + 1} (day ${day}): ${err instanceof Error ? err.message : 'Unknown error'}`,
         pct: -1,
       });
+      snapResults.push(new Map());
     }
 
-    // Throttle between day-level calls
-    if (i < timestamps.length - 1) {
+    if (i < snapTimestamps.length - 1) {
       await sleep(THROTTLE_MS);
+    }
+  }
+
+  const [snap1Map, snap2Map, snap3Map] = snapResults;
+
+  // Collect all owner codes across all 3 snapshots
+  const allOwners = new Set<string>();
+  for (const m of snapResults) {
+    for (const ownerCode of m.keys()) {
+      allOwners.add(ownerCode);
     }
   }
 
   onProgress({
     step: 'bulk',
-    message: `Building billing rows for ${lotMap.size} tracked lots...`,
-    pct: 96,
+    message: `Building billing rows for ${allOwners.size} customers...`,
+    pct: 93,
   });
 
-  const billingRows = buildBillingRows(lotMap, totalDays, rates);
+  const rows: BulkBillingRow[] = [];
+
+  for (const ownerCode of allOwners) {
+    const snap1Volume = snap1Map.get(ownerCode) || 0;
+    const snap2Volume = snap2Map.get(ownerCode) || 0;
+    const snap3Volume = snap3Map.get(ownerCode) || 0;
+
+    const billingVolume = Math.max(snap1Volume, snap2Volume, snap3Volume);
+    const proration = snap2Volume > 0 ? 1.0 : 0.5;
+    const totalCost = Math.round(billingVolume * bulkStorageRate * proration * 100) / 100;
+
+    rows.push({
+      ownerCode,
+      snap1Volume: Math.round(snap1Volume * 100) / 100,
+      snap2Volume: Math.round(snap2Volume * 100) / 100,
+      snap3Volume: Math.round(snap3Volume * 100) / 100,
+      billingVolume: Math.round(billingVolume * 100) / 100,
+      proration,
+      rate: bulkStorageRate,
+      totalCost,
+    });
+  }
+
+  rows.sort((a, b) => a.ownerCode.localeCompare(b.ownerCode));
 
   onProgress({
     step: 'bulk',
-    message: `Bulk inventory complete: ${billingRows.length} billing rows generated.`,
+    message: `Bulk inventory complete: ${rows.length} billing rows generated.`,
     pct: 100,
   });
 
-  return billingRows;
+  return rows;
 }

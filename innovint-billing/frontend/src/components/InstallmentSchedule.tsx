@@ -87,7 +87,7 @@ export default function InstallmentSchedule({ records }: InstallmentScheduleProp
               <th key={m} className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
                 <button
                   onClick={() => copyMonth(m)}
-                  className="hover:text-blue-600"
+                  className="hover:text-violet-600"
                   title={`Copy ${m} data to clipboard`}
                 >
                   {m.replace(/(\w+)\s/, (_, name: string) => name.substring(0, 3) + ' ')}

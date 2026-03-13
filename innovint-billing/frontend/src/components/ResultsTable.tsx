@@ -51,7 +51,7 @@ export default function ResultsTable({ rows }: ResultsTableProps) {
     { key: 'date', label: 'Date' },
     { key: 'ownerCode', label: 'Owner' },
     { key: 'analysisOrNotes', label: 'Analysis/Notes' },
-    { key: 'hours', label: 'Hours' },
+    { key: 'quantity', label: 'Qty' },
     { key: 'rate', label: 'Rate' },
     { key: 'setupFee', label: 'Setup Fee' },
     { key: 'total', label: 'Total' },
@@ -106,15 +106,24 @@ export default function ResultsTable({ rows }: ResultsTableProps) {
           </thead>
           <tbody>
             {sorted.map((row, i) => (
-              <tr key={`${row.actionId}-${i}`} className={`border-t ${rowBgColor(row)} hover:brightness-95`}>
+              <tr key={`${row.actionId}-${i}`} className={`border-t ${rowBgColor(row)} hover:brightness-95 ${row.matchedRuleLabel.includes('(rectified)') ? 'italic' : ''}`}>
                 <td className="px-3 py-1.5 whitespace-nowrap">{row.actionType}</td>
-                <td className="px-3 py-1.5 whitespace-nowrap font-mono text-xs">{row.actionId.slice(0, 12)}</td>
+                <td className="px-3 py-1.5 whitespace-nowrap font-mono text-xs">
+                  <a
+                    href={`https://cellar.innovint.us/#/wineries/2159258/activity/action/${row.actionId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-violet-600 hover:text-violet-800 underline"
+                  >
+                    {row.actionId.slice(0, 12)}
+                  </a>
+                </td>
                 <td className="px-3 py-1.5 max-w-[180px] truncate" title={row.lotCodes}>{row.lotCodes}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap">{row.performer}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap">{row.date}</td>
                 <td className="px-3 py-1.5 font-mono">{row.ownerCode}</td>
                 <td className="px-3 py-1.5 max-w-[200px] truncate" title={row.analysisOrNotes}>{row.analysisOrNotes}</td>
-                <td className="px-3 py-1.5 text-right">{row.hours || ''}</td>
+                <td className="px-3 py-1.5 text-right">{row.quantity ? row.quantity.toFixed(1) : ''}</td>
                 <td className="px-3 py-1.5 text-right">${row.rate.toFixed(2)}</td>
                 <td className="px-3 py-1.5 text-right">${row.setupFee.toFixed(2)}</td>
                 <td className="px-3 py-1.5 text-right font-semibold">${row.total.toFixed(2)}</td>

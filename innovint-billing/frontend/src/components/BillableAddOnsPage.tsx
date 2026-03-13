@@ -3,10 +3,12 @@ import {
   getBillableAddOns, addBillableAddOn, deleteBillableAddOn, clearBillableAddOnsByMonth,
   BillableAddOn, RateRule,
 } from '../api/client';
+import { UserRole } from '../auth/AuthContext';
 
 interface BillableAddOnsPageProps {
   rateRules: RateRule[];
   ownerCodes: string[];
+  role: UserRole;
 }
 
 interface NewRow {
@@ -31,11 +33,13 @@ function getPreviousMonth(): { yearMonth: string; label: string } {
   return { yearMonth, label };
 }
 
-export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAddOnsPageProps) {
+export default function BillableAddOnsPage({ rateRules, ownerCodes, role }: BillableAddOnsPageProps) {
   const [addOns, setAddOns] = useState<BillableAddOn[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [newRow, setNewRow] = useState<NewRow | null>(null);
+
+  const canDelete = role !== 'cellar';
 
   const load = useCallback(() => {
     setLoading(true);
@@ -119,16 +123,18 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
         <h2 className="text-2xl font-bold text-gray-800">Billable Add-Ons</h2>
         {!newRow && (
           <div className="flex gap-2">
-            <button
-              onClick={handleClearMonth}
-              disabled={prevMonthCount === 0}
-              className="flex-1 sm:flex-none px-4 py-2.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Clear {prevMonth.label} ({prevMonthCount})
-            </button>
+            {canDelete && (
+              <button
+                onClick={handleClearMonth}
+                disabled={prevMonthCount === 0}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear {prevMonth.label} ({prevMonthCount})
+              </button>
+            )}
             <button
               onClick={handleAdd}
-              className="flex-1 sm:flex-none px-4 py-2.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+              className="flex-1 sm:flex-none px-4 py-2.5 bg-violet-600 text-white text-sm rounded hover:bg-violet-700"
             >
               Add Row
             </button>
@@ -138,7 +144,7 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
 
       {/* New row form — stacked card on mobile, inline table row on desktop */}
       {newRow && (
-        <div className="mb-4 border border-blue-200 bg-blue-50 rounded-lg p-4 md:hidden">
+        <div className="mb-4 border border-violet-200 bg-violet-50 rounded-lg p-4 md:hidden">
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Date</label>
@@ -254,7 +260,7 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {newRow && (
-                  <tr className="bg-blue-50">
+                  <tr className="bg-violet-50">
                     <td className={tdClass}>
                       <input
                         type="date"
@@ -351,13 +357,15 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
                     <td className={tdClass + ' font-medium'}>${a.totalCost.toFixed(2)}</td>
                     <td className={tdClass}>{a.notes}</td>
                     <td className={tdClass}>
-                      <button
-                        onClick={() => handleDelete(a.id)}
-                        className="text-red-500 hover:text-red-700 text-sm font-bold"
-                        title="Delete"
-                      >
-                        X
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDelete(a.id)}
+                          className="text-red-500 hover:text-red-700 text-sm font-bold"
+                          title="Delete"
+                        >
+                          X
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -387,14 +395,16 @@ export default function BillableAddOnsPage({ rateRules, ownerCodes }: BillableAd
                 {a.notes && (
                   <p className="text-xs text-gray-500 mt-1 truncate">{a.notes}</p>
                 )}
-                <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end">
-                  <button
-                    onClick={() => handleDelete(a.id)}
-                    className="px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {canDelete && (
+                  <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end">
+                    <button
+                      onClick={() => handleDelete(a.id)}
+                      className="px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

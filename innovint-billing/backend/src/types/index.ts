@@ -1,3 +1,29 @@
+// ─── Auth Types ───
+
+export type UserRole = 'admin' | 'team_member' | 'cellar';
+
+export interface UserRecord {
+  uid: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface AuthUser {
+  uid: string;
+  email: string;
+  role: UserRole;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthUser;
+    }
+  }
+}
+
 // ─── InnoVint API Response Types ───
 // Matches the real API at sutter.innovint.us
 
@@ -42,6 +68,7 @@ export interface ActionApiItem {
       _id: number;
       publicId?: string;
       lotCode: string;
+      taxClass?: string;
     };
     vessels?: Array<{
       _id: number;
@@ -49,26 +76,79 @@ export interface ActionApiItem {
       vesselType: string;
       publicId?: string;
       capacity?: { value: number; unit: string };
+      volume?: { value: number; unit: string };
+      startingVolume?: { value: number; unit: string };
+      volumeChange?: { value: number; unit: string };
     }>;
     additives?: Array<{
-      name: string;
+      name?: string;
       quantity?: number;
       unit?: string;
+      additionRateUnit?: string;
+      additionRateValue?: number;
+      additive?: {
+        _id: number;
+        productName: string;
+        additionUnit?: string;
+        inventoryUnit?: string;
+        access?: { global?: boolean; owners?: Array<{ _id: number; name: string }> };
+      };
+      batches?: Array<{
+        amount: number;
+      }>;
     }>;
     drains?: Array<{
       lot?: { lotCode: string };
       vessel?: { vesselCode: string; vesselType?: string; customerIdPrefix?: string };
       volume?: { value: number; unit: string };
+      vessels?: Array<{
+        vessel?: { vesselCode: string; vesselType?: string };
+        volume?: { value: number; unit: string };
+        startingVolume?: { value: number; unit: string };
+        volumeChange?: { value: number; unit: string };
+      }>;
     }>;
     fills?: Array<{
       lot?: { lotCode: string };
       vessel?: { vesselCode: string; vesselType?: string; customerIdPrefix?: string };
       volume?: { value: number; unit: string };
+      vessels?: Array<{
+        vessel?: { vesselCode: string; vesselType?: string };
+        volume?: { value: number; unit: string };
+        startingVolume?: { value: number; unit: string };
+        volumeChange?: { value: number; unit: string };
+        numberOfFilledBottles?: number;
+      }>;
     }>;
     involvedLots?: Array<{
       lot?: { lotCode: string };
       vessel?: { vesselCode: string; vesselType?: string; customerIdPrefix?: string };
+      volume?: { value: number; unit: string };
+      startingVolume?: { value: number; unit: string };
+      volumeChange?: { value: number; unit: string };
     }>;
+    complianceContext?: string;
+    lots?: Array<{
+      lot?: { _id: number; lotCode: string; taxClass?: string };
+      vessels?: Array<{ _id: number; vesselCode: string; vesselType: string }>;
+    }>;
+    bottleFormats?: Array<{
+      bottleType: { name: string; volume?: { value: number; unit: string }; _id?: number };
+      bottlesPerCase: number;
+      cases: number;
+      bottles: number;
+      pallets: number;
+      casesPerPallet: number;
+      caseGoodsLot?: { _id: number; lotCode: string };
+    }>;
+    bottleFormat?: {
+      bottleType?: { name: string; volume?: { value: number; unit: string }; _id?: number };
+      bottlesPerCase: number;
+      cases: number;
+      bottles: number;
+      pallets: number;
+      casesPerPallet: number;
+    };
   };
   workOrder?: {
     _id: number;
@@ -93,6 +173,15 @@ export interface RateRule {
   maxQty: number;
   notes: string;
   enabled: boolean;
+  setupFeeMode?: 'per_action' | 'spread_daily';
+  minDollar?: number;
+  freeFirstPerLot?: boolean;
+  materialRate?: number;
+  bottlesPerCase?: number;
+  excludeTaxClasses?: string[];
+  excludeAllInclusive?: boolean;
+  vesselType?: string;
+  analysisSource?: string;
 }
 
 // ─── Processed Action Row ───
@@ -116,6 +205,12 @@ export interface ActionRow {
   quantity?: number;
   unit?: string;
   rawActionType?: string;
+  vesselCount?: number;
+  bottlesPerCase?: number;
+  taxClass?: string;
+  materialChargeApplies?: boolean;
+  additiveQuantity?: number;
+  analysisSource?: string;
 }
 
 // ─── Audit Row ───
@@ -133,39 +228,14 @@ export interface AuditRow {
 
 // ─── Bulk Inventory ───
 
-export interface LotSnapshot {
-  lotCode: string;
-  ownerCode: string;
-  totalVolume: number;
-  tankVolume: number;
-  barrelCount: number;
-  kegCount: number;
-  tankDays: Set<string>;
-  barrelDays: Set<string>;
-  kegDays: Set<string>;
-  maxBarrelCount: number;
-  maxKegCount: number;
-}
-
 export interface BulkBillingRow {
   ownerCode: string;
-  lotCode: string;
-  tankVolume: number;
-  barrelCount: number;
-  kegCount: number;
-  tankDaysPresent: number;
-  barrelDaysPresent: number;
-  kegDaysPresent: number;
-  totalDays: number;
-  tankPct: number;
-  barrelPct: number;
-  kegPct: number;
-  tankRate: number;
-  barrelRate: number;
-  kegRate: number;
-  tankCost: number;
-  barrelCost: number;
-  kegCost: number;
+  snap1Volume: number;
+  snap2Volume: number;
+  snap3Volume: number;
+  billingVolume: number;
+  proration: number;
+  rate: number;
   totalCost: number;
 }
 
@@ -185,6 +255,7 @@ export interface InventoryLot {
     vesselType: string;
     capacity?: { value: number; unit: string };
   }>;
+  access?: { owners?: Array<{ _id: number; name: string }> };
 }
 
 // ─── Barrel Inventory ───
@@ -228,6 +299,15 @@ export interface BillingResponse {
   };
 }
 
+// ─── Fruit Programs ───
+
+export interface FruitProgram {
+  id: string;
+  name: string;           // "Program #1" — matches lot tag value
+  description: string;    // "Red Wine"
+  ratePerTon: number;     // 2300
+}
+
 // ─── Fruit Intake ───
 
 export interface FruitInstallment {
@@ -254,8 +334,11 @@ export interface FruitIntakeRecord {
   monthlyAmount: number;
   contractStartMonth: string;
   contractEndMonth: string;
+  smallLotFee: number;
   installments: FruitInstallment[];
   savedAt: string;
+  programId?: string;
+  programName?: string;
 }
 
 export interface FruitIntakeRunResult {
@@ -268,24 +351,15 @@ export interface FruitIntakeRunResult {
   records: FruitIntakeRecord[];
 }
 
-export interface ContractLengthRule {
-  color: string;
-  varietal: string;
-  months: number;
-}
-
-export interface FruitIntakeRate {
-  vintage: number;
-  contractMonths: number;
-  ratePerTon: number;
-}
-
 export interface FruitIntakeSettings {
   actionTypeKey: string;
   vintageLookback: number;
   apiPageDelaySeconds: number;
-  contractLengthRules: ContractLengthRule[];
-  rates: FruitIntakeRate[];
+  programs: FruitProgram[];
+  minProcessingFee: number;
+  defaultContractMonths: number;
+  smallLotFee: number;
+  smallLotThresholdTons: number;
 }
 
 // ─── Fruit Intake API Response ───
@@ -322,6 +396,17 @@ export interface BillableAddOn {
   notes: string;
 }
 
+// ─── Customer Record ───
+
+export interface CustomerRecord {
+  ownerName: string;   // InnoVint API owner name (was customerMap key)
+  code: string;        // billing code (was customerMap value / qbCustomerMap key)
+  displayName: string; // invoice display name (was qbCustomerMap value)
+  address: string;
+  phone: string;
+  email: string;
+}
+
 // ─── Settings / Config ───
 
 export interface AppSettings {
@@ -331,13 +416,11 @@ export interface AppSettings {
   lastUsedMonth: string;
   lastUsedYear: number;
   barrelSnapshots: BarrelSnapshots;
+  bulkStorageRate: number;
   fruitIntake: FruitIntakeRunResult | null;
-  customerMap: Record<string, string>;
+  customers: CustomerRecord[];
   fruitIntakeSettings: FruitIntakeSettings;
   billableAddOns: BillableAddOn[];
-  qbExportSettings: QBExportSettings;
-  qbExportHistory: QBExportRecord[];
-  qbCustomerMap: Record<string, string>;
 }
 
 // ─── SSE Progress ───
@@ -354,50 +437,46 @@ export interface SessionData {
   billingResult?: BillingResponse;
 }
 
-// ─── QuickBooks Export ───
+// ─── Invoice Types ───
 
-export interface QBExportSettings {
-  excludedCustomers: string[];
-  enabledSources: { actions: boolean; barrel: boolean; bulk: boolean; fruitIntake: boolean; addOns: boolean };
-}
-
-export interface QBExportRecord {
-  id: string;
-  exportedAt: string;
-  month: string;
-  year: number;
-  customerCount: number;
-  lineItemCount: number;
-  totalAmount: number;
-  filename: string;
-}
-
-export interface QBLineItem {
-  arAccount: string;
-  customerJob: string;
-  date: string;
-  salesTax: string;
-  number: string;
-  class: string;
-  item: string;
+export interface InvoiceLineItem {
   description: string;
   quantity: number;
-  rate: number;
+  price: number;
   amount: number;
-  taxCode: string;
 }
 
-export interface QBCustomerSummary {
+export interface CustomerInvoice {
+  invoiceType: 'winery-services' | 'fruit-intake';
+  invoiceNumber: string;
+  issueDate: string;
+  title: string;
+  subtitle?: string;
+  customerName: string;
   ownerCode: string;
-  sources: Record<'actions'|'barrel'|'bulk'|'fruitIntake'|'addOns', { items: QBLineItem[]; subtotal: number }>;
-  total: number;
+  customerAddress?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  lineItems: InvoiceLineItem[];
+  subtotal: number;
+  merchantFee: number;
+  totalDue: number;
 }
 
-export interface QBPreviewResponse {
-  customers: QBCustomerSummary[];
+export interface InvoiceCustomerSummary {
+  ownerCode: string;
+  customerName: string;
+  wineryServices: CustomerInvoice | null;
+  fruitIntake: CustomerInvoice | null;
+  combinedTotal: number;
+}
+
+export interface InvoicePreviewResponse {
+  customers: InvoiceCustomerSummary[];
   grandTotal: number;
-  lineItemCount: number;
-  billingDate: string;
+  invoiceCount: number;
+  billingMonth: string;
+  billingYear: number;
 }
 
 // ─── Omitted Action Types ───

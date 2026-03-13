@@ -22,7 +22,24 @@
       "Bash(/tmp/gh/gh_2.67.0_macOS_arm64/bin/gh auth status:*)",
       "Bash(/tmp/gh/gh_2.67.0_macOS_arm64/bin/gh repo create:*)",
       "Bash(git config:*)",
-      "Bash(open https://github.com/michaelszymczak-wq/cc-billing)"
+      "Bash(open https://github.com/michaelszymczak-wq/cc-billing)",
+      "Bash(git status:*)",
+      "Bash(xxd:*)",
+      "Bash(npm run build:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(gcloud --version:*)",
+      "Bash(node --version:*)",
+      "Bash(firebase:*)",
+      "Bash(gcloud run deploy:*)",
+      "Bash(gcloud services enable:*)",
+      "Bash(gcloud run services update:*)",
+      "Bash(git -C /Users/michaelszymczak/cc-billing-atlas config:*)",
+      "WebFetch(domain:winespies.com)",
+      "Bash(USE_FIRESTORE=true npm run seed-admin:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(echo:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

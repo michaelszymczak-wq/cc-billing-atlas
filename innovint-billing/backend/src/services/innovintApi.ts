@@ -25,7 +25,7 @@ export async function fetchAllActions(
 
   while (offset < totalItems) {
     const url = new URL(`${BASE_URL}/wineries/${wineryId}/actions`);
-    url.searchParams.set('actionTypes', 'ANALYSIS,CUSTOM');
+    url.searchParams.set('actionTypes', 'FILTER,ANALYSIS,CUSTOM,BOND_TO_BOND_TRANSFER_IN,BOND_TO_BOND_TRANSFER_OUT,BOTTLE,ADDITION,VOLUME_ADJUSTMENT,REMOVED_TAXPAID,BOTTLING_EN_TIRAGE');
     url.searchParams.set('startEffectiveAt', startDate);
     url.searchParams.set('endEffectiveAt', endDate);
     url.searchParams.set('includeWineryContents', 'True');
@@ -165,6 +165,44 @@ export async function fetchInventorySnapshot(
   }
 
   return allLots;
+}
+
+export async function fetchLotVolume(
+  wineryId: string,
+  token: string,
+  lotCode: string,
+  timestamp: string
+): Promise<number> {
+  const url = new URL(`${BASE_URL}/wineries/${wineryId}/lotsInventory`);
+  url.searchParams.set('q', lotCode);
+  url.searchParams.set('time', timestamp);
+  url.searchParams.set('lotTypes', 'JUICE_WINE');
+  url.searchParams.set('includeVessels', 'true');
+  url.searchParams.set('contents', 'true');
+  url.searchParams.set('size', '100');
+  url.searchParams.set('offset', '0');
+  url.searchParams.set('sort', 'totalContents:-1');
+  url.searchParams.set('ngsw-bypass', 'true');
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Authorization': `Access-Token ${token}`,
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) return 0;
+
+    const data = (await response.json()) as unknown;
+    const items = Array.isArray(data) ? data : [];
+    if (items.length === 0) return 0;
+
+    const volume = items[0]?.volume?.value;
+    return typeof volume === 'number' ? volume : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function getMonthDateRange(month: string, year: number): { start: string; end: string } {

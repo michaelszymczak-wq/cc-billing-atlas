@@ -38,7 +38,7 @@ export default function BarrelTable({ rows }: BarrelTableProps) {
             </tr>
           ))}
           {rows.length > 0 && (
-            <tr className="border-t-2 border-blue-200 bg-blue-50 font-semibold">
+            <tr className="border-t-2 border-violet-200 bg-violet-50 font-semibold">
               <td className="px-3 py-1.5" colSpan={6}>Total</td>
               <td className="px-3 py-1.5 text-right">${totalCharge.toFixed(2)}</td>
             </tr>

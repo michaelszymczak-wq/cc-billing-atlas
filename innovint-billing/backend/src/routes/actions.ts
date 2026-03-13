@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { BillingRequest, BillingResponse, ProgressEvent, RateRule, SessionData } from '../types';
-import { fetchAllActions, getMonthDateRange } from '../services/innovintApi';
-import { processActions } from '../services/actionProcessor';
+import { fetchAllActions, fetchInventorySnapshot, getMonthDateRange } from '../services/innovintApi';
+import { processActions, enrichCustomActionVolumes } from '../services/actionProcessor';
 import { applyRateMapping } from '../services/rateMapper';
 import { runBulkInventory } from '../services/bulkInventory';
 import { runBarrelInventory } from '../services/barrelInventory';
 import { generateExcel } from '../services/excelExport';
-import { loadSettings } from '../persistence';
+import { loadSettings, saveSessionResult, loadSessionResult } from '../persistence';
 
 const router = Router();
 
@@ -16,18 +16,41 @@ export const sessions = new Map<string, SessionData>();
 // SSE clients for progress streaming (exported for reuse by fruit intake routes)
 export const sseClients = new Map<string, Response>();
 
+// Progress event store for polling (in-memory)
+export const progressStore = new Map<string, ProgressEvent[]>();
+
 export function generateSessionId(): string {
   return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
 export function emitProgress(sessionId: string, event: ProgressEvent): void {
+  // Store for polling
+  if (!progressStore.has(sessionId)) {
+    progressStore.set(sessionId, []);
+  }
+  progressStore.get(sessionId)!.push(event);
+
+  // Also emit to SSE client if connected (local dev)
   const client = sseClients.get(sessionId);
   if (client) {
     client.write(`data: ${JSON.stringify(event)}\n\n`);
   }
 }
 
-// SSE endpoint for billing progress
+// Polling endpoint for billing progress
+router.get('/billing-progress-poll', (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId as string;
+  const after = parseInt(req.query.after as string) || 0;
+  if (!sessionId) {
+    res.status(400).json({ error: 'sessionId required' });
+    return;
+  }
+  const events = progressStore.get(sessionId) || [];
+  const newEvents = events.slice(after);
+  res.json({ events: newEvents, total: events.length });
+});
+
+// SSE endpoint for billing progress (kept for local dev)
 router.get('/billing-progress', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
   if (!sessionId) {
@@ -71,9 +94,17 @@ router.post('/run-billing', async (req: Request, res: Response) => {
 });
 
 // Get billing results
-router.get('/billing-results', (req: Request, res: Response) => {
+router.get('/billing-results', async (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const session = sessions.get(sessionId);
+  let session = sessions.get(sessionId);
+  if (!session?.billingResult) {
+    // Try Firestore
+    const stored = await loadSessionResult(sessionId);
+    if (stored?.billingResult) {
+      sessions.set(sessionId, stored); // populate cache
+      session = stored;
+    }
+  }
   if (!session?.billingResult) {
     res.status(404).json({ error: 'No results found for this session.' });
     return;
@@ -84,7 +115,14 @@ router.get('/billing-results', (req: Request, res: Response) => {
 // Excel export
 router.get('/export-excel', async (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const session = sessions.get(sessionId);
+  let session = sessions.get(sessionId);
+  if (!session?.billingResult) {
+    const stored = await loadSessionResult(sessionId);
+    if (stored?.billingResult) {
+      sessions.set(sessionId, stored);
+      session = stored;
+    }
+  }
   if (!session?.billingResult) {
     res.status(404).json({ error: 'No results found for this session.' });
     return;
@@ -105,7 +143,7 @@ router.get('/export-excel', async (req: Request, res: Response) => {
     );
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=innovint-billing.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=cc-billing-atlas.xlsx');
     res.send(buffer);
   } catch {
     res.status(500).json({ error: 'Failed to generate Excel file.' });
@@ -142,8 +180,59 @@ async function runBillingPipeline(
       onProgress({ step: 'actions', message: 'Processing actions...', pct: 35 });
       const actionRows = processActions(rawActions);
 
+      await enrichCustomActionVolumes(actionRows, wineryId, token, onProgress);
+
+      // Fetch all-inclusive lot codes from inventory snapshot (if any rules use excludeAllInclusive)
+      let allInclusiveLotCodes = new Set<string>();
+      const hasAllInclusiveRules = rateRules.some((r) => r.enabled && r.excludeAllInclusive);
+      if (hasAllInclusiveRules) {
+        onProgress({ step: 'rates', message: 'Fetching inventory for all-inclusive lot tags...', pct: 38 });
+        const snapshot = await fetchInventorySnapshot(wineryId, token, end);
+        for (const item of snapshot) {
+          if (item.tags?.some((tag) => /all[- ]?inclusive/i.test(tag))) {
+            if (item.lot?.lotCode) {
+              allInclusiveLotCodes.add(item.lot.lotCode);
+            }
+          }
+        }
+        onProgress({
+          step: 'rates',
+          message: `Found ${allInclusiveLotCodes.size} all-inclusive lot(s).`,
+          pct: 39,
+        });
+      }
+
       onProgress({ step: 'rates', message: 'Matching rate rules to actions...', pct: 40 });
-      const { matched, auditRows } = applyRateMapping(actionRows, rateRules);
+
+      // Log rules with freeFirstPerLot for debugging
+      const freeFirstRules = rateRules.filter((r) => r.freeFirstPerLot && r.enabled);
+      if (freeFirstRules.length > 0) {
+        onProgress({
+          step: 'rates',
+          message: `"First included" rules: ${freeFirstRules.map((r) => r.label).join(', ')}`,
+          pct: -1,
+        });
+      }
+
+      const { matched, auditRows } = applyRateMapping(actionRows, rateRules, allInclusiveLotCodes);
+
+      // Log freeFirstPerLot results
+      const includedRows = matched.filter((r) => r.matchedRuleLabel.includes('(Included)'));
+      if (freeFirstRules.length > 0) {
+        if (includedRows.length > 0) {
+          onProgress({
+            step: 'rates',
+            message: `"First included" applied to ${includedRows.length} row(s): ${includedRows.slice(0, 5).map((r) => `${r.actionType}/${r.analysisOrNotes} on ${r.lotCodes.substring(0, 30)}`).join('; ')}${includedRows.length > 5 ? '...' : ''}`,
+            pct: -1,
+          });
+        } else {
+          onProgress({
+            step: 'rates',
+            message: `WARNING: ${freeFirstRules.length} "First included" rule(s) enabled but 0 rows were marked as included. Check that rule variations match the action data.`,
+            pct: -1,
+          });
+        }
+      }
 
       result.actions = matched;
       result.auditRows = auditRows;
@@ -165,12 +254,13 @@ async function runBillingPipeline(
       try {
         onProgress({ step: 'bulk', message: 'Starting bulk inventory billing...', pct: 60 });
 
+        const bulkSettings = await loadSettings();
         result.bulkInventory = await runBulkInventory(
           wineryId,
           token,
           month,
           year,
-          rateRules,
+          bulkSettings.bulkStorageRate,
           onProgress
         );
         result.summary.bulkLots = result.bulkInventory.length;
@@ -209,7 +299,9 @@ async function runBillingPipeline(
       }
     }
 
-    sessions.set(sessionId, { billingResult: result });
+    const sessionData: SessionData = { billingResult: result };
+    sessions.set(sessionId, sessionData);
+    await saveSessionResult(sessionId, sessionData);
     onProgress({ step: 'complete', message: 'Billing run complete!', pct: 100 });
   } catch (err) {
     onProgress({

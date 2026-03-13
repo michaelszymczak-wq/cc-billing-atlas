@@ -1,21 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   getFruitIntakeSaved, runFruitIntake, deleteFruitIntakeSaved,
-  subscribeToBillingProgress, FruitIntakeRunResult, FruitIntakeRecord,
-  updateFruitIntakeRecord, getSettings,
+  pollBillingProgress, FruitIntakeRunResult, FruitIntakeRecord,
+  updateFruitIntakeRecord, getSettings, FruitProgram,
 } from '../api/client';
 import TabView from './TabView';
 import FruitRecordsTable from './FruitRecordsTable';
 import InstallmentSchedule from './InstallmentSchedule';
-import CustomerMapEditor from './CustomerMapEditor';
 import { getRemainingBalance } from '../utils/fruitIntakeUtils';
 
 interface FruitIntakePageProps {
   customerMap: Record<string, string>;
-  onCustomerMapChange: (map: Record<string, string>) => void;
 }
 
-export default function FruitIntakePage({ customerMap, onCustomerMapChange }: FruitIntakePageProps) {
+export default function FruitIntakePage({ customerMap }: FruitIntakePageProps) {
   const [savedData, setSavedData] = useState<FruitIntakeRunResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -27,6 +25,7 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
   const [filterColor, setFilterColor] = useState('');
   const [filterBalance, setFilterBalance] = useState<'' | 'has-balance' | 'completed'>('');
   const [availableContractMonths, setAvailableContractMonths] = useState<number[]>([]);
+  const [programs, setPrograms] = useState<FruitProgram[]>([]);
 
   const loadSaved = useCallback(() => {
     setLoading(true);
@@ -42,8 +41,9 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
 
   useEffect(() => {
     getSettings().then((s) => {
-      const months = [...new Set((s.fruitIntakeSettings?.rates || []).map((r) => r.contractMonths))].sort((a, b) => a - b);
-      setAvailableContractMonths(months);
+      const defaultMonths = s.fruitIntakeSettings?.defaultContractMonths || 9;
+      setAvailableContractMonths([defaultMonths]);
+      setPrograms(s.fruitIntakeSettings?.programs || []);
     }).catch(() => {});
   }, []);
 
@@ -56,14 +56,13 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
     try {
       const { sessionId } = await runFruitIntake(customerMap);
 
-      const es = subscribeToBillingProgress(
+      pollBillingProgress(
         sessionId,
         (event) => {
           setLogs((prev) => [...prev, event]);
           if (event.pct >= 0) setProgress(event.pct);
 
           if (event.step === 'complete') {
-            es.close();
             setTimeout(() => {
               loadSaved();
               setRunning(false);
@@ -71,16 +70,9 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
           }
 
           if (event.step === 'error') {
-            es.close();
             setRunning(false);
           }
         },
-        () => {
-          setTimeout(() => {
-            loadSaved();
-            setRunning(false);
-          }, 1000);
-        }
       );
     } catch (err) {
       setLogs((prev) => [...prev, {
@@ -97,15 +89,20 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
     setSavedData(result);
   }, []);
 
+  const handleProgramChange = useCallback(async (recordId: string, programId: string) => {
+    const result = await updateFruitIntakeRecord(recordId, { programId });
+    setSavedData(result);
+  }, []);
+
+  const handleFieldChange = useCallback(async (recordId: string, field: 'contractRatePerTon' | 'smallLotFee', value: number) => {
+    const result = await updateFruitIntakeRecord(recordId, { [field]: value });
+    setSavedData(result);
+  }, []);
+
   const handleDelete = async () => {
     await deleteFruitIntakeSaved();
     setSavedData(null);
   };
-
-  // Collect unmapped owners from saved data
-  const unmappedOwners = savedData
-    ? [...new Set(savedData.records.filter((r) => r.ownerCode === 'UNMAPPED').map((r) => r.ownerName))]
-    : [];
 
   const allRecords = savedData?.records || [];
   const ownerCodes = useMemo(() => [...new Set(allRecords.map((r) => r.ownerCode))].sort(), [allRecords]);
@@ -140,7 +137,7 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
         <div className="space-y-4">
           <div className="w-full bg-gray-200 rounded-full h-3">
             <div
-              className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+              className="bg-violet-600 h-3 rounded-full transition-all duration-300"
               style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
             />
           </div>
@@ -158,17 +155,12 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
       {/* No data state */}
       {!savedData && !running && (
         <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 text-blue-700 p-4 rounded-md text-sm">
-            No fruit intake data saved. Set up your customer mapping below, then run the fruit intake fetch.
+          <div className="bg-violet-50 border border-violet-200 text-violet-700 p-4 rounded-md text-sm">
+            No fruit intake data saved. Set up your customer mapping in the Customers tab, then run the fruit intake fetch.
           </div>
-          <CustomerMapEditor
-            customerMap={customerMap}
-            onSaved={onCustomerMapChange}
-            unmappedOwners={[]}
-          />
           <button
             onClick={handleRun}
-            className="px-6 py-2.5 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors"
+            className="px-6 py-2.5 bg-violet-600 text-white rounded-md font-medium hover:bg-violet-700 transition-colors"
           >
             Run Fruit Intake Fetch
           </button>
@@ -211,7 +203,7 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
               {hasFilters && (
                 <button
                   onClick={() => { setFilterOwner(''); setFilterVintage(''); setFilterColor(''); setFilterBalance(''); }}
-                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                  className="ml-2 text-violet-600 hover:text-violet-800 underline"
                 >
                   Clear
                 </button>
@@ -246,7 +238,7 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
             </p>
             <button
               onClick={() => setShowConfirmRerun(true)}
-              className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+              className="px-4 py-1.5 bg-violet-600 text-white rounded-md text-sm hover:bg-violet-700 transition-colors"
             >
               Re-run
             </button>
@@ -288,24 +280,12 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
                 id: 'records',
                 label: 'Records',
                 badge: filtered.length,
-                content: <FruitRecordsTable records={filtered} availableContractMonths={availableContractMonths} onContractLengthChange={handleContractLengthChange} />,
+                content: <FruitRecordsTable records={filtered} availableContractMonths={availableContractMonths} onContractLengthChange={handleContractLengthChange} programs={programs} onProgramChange={handleProgramChange} onFieldChange={handleFieldChange} />,
               },
               {
                 id: 'schedule',
                 label: 'Installment Schedule',
                 content: <InstallmentSchedule records={filtered} />,
-              },
-              {
-                id: 'customers',
-                label: 'Customers',
-                badge: unmappedOwners.length > 0 ? unmappedOwners.length : undefined,
-                content: (
-                  <CustomerMapEditor
-                    customerMap={customerMap}
-                    onSaved={onCustomerMapChange}
-                    unmappedOwners={unmappedOwners}
-                  />
-                ),
               },
             ]}
           />
@@ -315,14 +295,14 @@ export default function FruitIntakePage({ customerMap, onCustomerMapChange }: Fr
   );
 }
 
-function SummaryCard({ label, value, color = 'blue' }: { label: string; value: string | number; color?: string }) {
+function SummaryCard({ label, value, color = 'violet' }: { label: string; value: string | number; color?: string }) {
   const bgMap: Record<string, string> = {
-    blue: 'bg-blue-50 border-blue-200',
+    violet: 'bg-violet-50 border-violet-200',
     green: 'bg-green-50 border-green-200',
     amber: 'bg-amber-50 border-amber-200',
   };
   return (
-    <div className={`p-4 rounded-lg border ${bgMap[color] || bgMap.blue}`}>
+    <div className={`p-4 rounded-lg border ${bgMap[color] || bgMap.violet}`}>
       <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold mt-1">{value}</p>
     </div>

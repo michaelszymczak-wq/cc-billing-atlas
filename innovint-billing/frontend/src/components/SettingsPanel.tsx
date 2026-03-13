@@ -15,13 +15,17 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [barrelSnapshots, setBarrelSnapshots] = useState<BarrelSnapshots>({ snap1Day: 1, snap2Day: 15, snap3Day: 'last' });
+  const [bulkStorageRate, setBulkStorageRate] = useState<number>(0);
   const [snapStatus, setSnapStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [fruitSettings, setFruitSettings] = useState<FruitIntakeSettings>({
     actionTypeKey: 'FRUITINTAKE',
     vintageLookback: 3,
     apiPageDelaySeconds: 5,
-    contractLengthRules: [],
-    rates: [],
+    programs: [],
+    minProcessingFee: 1000,
+    defaultContractMonths: 9,
+    smallLotFee: 1000,
+    smallLotThresholdTons: 2.0,
   });
   const [fruitStatus, setFruitStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
 
@@ -32,6 +36,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
         setWineryId(s.wineryId);
         setHasToken(s.hasToken);
         if (s.barrelSnapshots) setBarrelSnapshots(s.barrelSnapshots);
+        if (s.bulkStorageRate !== undefined) setBulkStorageRate(s.bulkStorageRate);
         if (s.fruitIntakeSettings) setFruitSettings(s.fruitIntakeSettings);
       })
       .catch(() => {
@@ -58,7 +63,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
     <div className="max-w-lg">
       <h2 className="text-xl font-semibold mb-4">Settings</h2>
       <p className="text-sm text-gray-500 mb-6">
-        Configure your InnoVint API credentials. These are stored locally on your machine.
+        Configure your API credentials. These are stored locally on your machine.
       </p>
 
       <div className="space-y-4">
@@ -71,7 +76,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={hasToken ? 'Token saved (enter new to replace)' : 'Enter your InnoVint access token'}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-violet-500 focus:border-violet-500"
           />
         </div>
 
@@ -84,14 +89,14 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
             value={wineryId}
             onChange={(e) => setWineryId(e.target.value)}
             placeholder="e.g. 12345"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-violet-500 focus:border-violet-500"
           />
         </div>
 
         <button
           onClick={handleSave}
           disabled={status === 'saving'}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
         >
           {status === 'saving' ? 'Saving...' : 'Save Settings'}
         </button>
@@ -102,6 +107,42 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
         {status === 'error' && (
           <p className="text-sm text-red-600">{errorMsg}</p>
         )}
+      </div>
+
+      {/* Bulk Storage Rate */}
+      <div className="mt-8 pt-8 border-t border-gray-200">
+        <h3 className="text-base font-semibold mb-2">Bulk Storage Rate</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Rate per gallon charged for bulk wine storage. Applied to 3-snapshot billing.
+        </p>
+        <div className="max-w-xs">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Rate ($/gal)</label>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={bulkStorageRate}
+            onChange={(e) => setBulkStorageRate(parseFloat(e.target.value) || 0)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+          />
+          <button
+            onClick={async () => {
+              setStatus('saving');
+              try {
+                await saveSettings({ bulkStorageRate });
+                setStatus('success');
+                setTimeout(() => setStatus('idle'), 2000);
+              } catch {
+                setStatus('error');
+                setErrorMsg('Failed to save bulk storage rate');
+              }
+            }}
+            disabled={status === 'saving'}
+            className="mt-2 px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
+          >
+            {status === 'saving' ? 'Saving...' : 'Save Bulk Storage Rate'}
+          </button>
+        </div>
       </div>
 
       {/* Barrel Inventory Snapshots */}
@@ -162,7 +203,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
               }
             }}
             disabled={snapStatus === 'saving'}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
           >
             {snapStatus === 'saving' ? 'Saving...' : 'Save Snapshot Settings'}
           </button>
@@ -212,123 +253,55 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
             </div>
           </div>
 
-          {/* Contract Length Rules */}
+          {/* Programs */}
           <div className="mt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Contract Length Rules</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">Programs (rate per ton by lot tag)</p>
             <div className="space-y-2">
-              <div className="grid grid-cols-[1fr_1fr_80px_auto] gap-2 text-xs font-medium text-gray-500 uppercase">
-                <span>Color</span>
-                <span>Varietal</span>
-                <span>Months</span>
+              <div className="grid grid-cols-[1fr_1fr_120px_auto] gap-2 text-xs font-medium text-gray-500 uppercase">
+                <span>Name</span>
+                <span>Description</span>
+                <span>Rate/Ton ($)</span>
                 <span></span>
               </div>
-              {fruitSettings.contractLengthRules.map((rule, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2">
+              {(fruitSettings.programs || []).map((prog, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_1fr_120px_auto] gap-2">
                   <input
                     type="text"
-                    value={rule.color}
+                    value={prog.name}
                     onChange={(e) => {
-                      const rules = [...fruitSettings.contractLengthRules];
-                      rules[idx] = { ...rules[idx], color: e.target.value };
-                      setFruitSettings((p) => ({ ...p, contractLengthRules: rules }));
+                      const programs = [...(fruitSettings.programs || [])];
+                      programs[idx] = { ...programs[idx], name: e.target.value };
+                      setFruitSettings((p) => ({ ...p, programs }));
                     }}
                     className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
-                    placeholder="e.g. red"
+                    placeholder="e.g. Program #1"
                   />
                   <input
                     type="text"
-                    value={rule.varietal}
+                    value={prog.description}
                     onChange={(e) => {
-                      const rules = [...fruitSettings.contractLengthRules];
-                      rules[idx] = { ...rules[idx], varietal: e.target.value };
-                      setFruitSettings((p) => ({ ...p, contractLengthRules: rules }));
+                      const programs = [...(fruitSettings.programs || [])];
+                      programs[idx] = { ...programs[idx], description: e.target.value };
+                      setFruitSettings((p) => ({ ...p, programs }));
                     }}
                     className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
-                    placeholder="(blank = all)"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={rule.months}
-                    onChange={(e) => {
-                      const rules = [...fruitSettings.contractLengthRules];
-                      rules[idx] = { ...rules[idx], months: parseInt(e.target.value) || 1 };
-                      setFruitSettings((p) => ({ ...p, contractLengthRules: rules }));
-                    }}
-                    className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
-                  />
-                  <button
-                    onClick={() => {
-                      const rules = fruitSettings.contractLengthRules.filter((_, i) => i !== idx);
-                      setFruitSettings((p) => ({ ...p, contractLengthRules: rules }));
-                    }}
-                    className="px-2 text-red-500 hover:text-red-700 text-sm"
-                  >
-                    X
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={() => {
-                  setFruitSettings((p) => ({
-                    ...p,
-                    contractLengthRules: [...p.contractLengthRules, { color: '', varietal: '', months: 9 }],
-                  }));
-                }}
-                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                + Add Rule
-              </button>
-            </div>
-          </div>
-
-          {/* Fruit Intake Rates */}
-          <div className="mt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Rates (per ton by vintage &amp; contract length)</p>
-            <div className="space-y-2">
-              <div className="grid grid-cols-[100px_120px_120px_auto] gap-2 text-xs font-medium text-gray-500 uppercase">
-                <span>Vintage</span>
-                <span>Contract (mo)</span>
-                <span>Rate/ton ($)</span>
-                <span></span>
-              </div>
-              {(fruitSettings.rates || []).map((rate, idx) => (
-                <div key={idx} className="grid grid-cols-[100px_120px_120px_auto] gap-2">
-                  <input
-                    type="number"
-                    value={rate.vintage}
-                    onChange={(e) => {
-                      const rates = [...(fruitSettings.rates || [])];
-                      rates[idx] = { ...rates[idx], vintage: parseInt(e.target.value) || 2026 };
-                      setFruitSettings((p) => ({ ...p, rates }));
-                    }}
-                    className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
-                  />
-                  <input
-                    type="number"
-                    value={rate.contractMonths}
-                    onChange={(e) => {
-                      const rates = [...(fruitSettings.rates || [])];
-                      rates[idx] = { ...rates[idx], contractMonths: parseInt(e.target.value) || 9 };
-                      setFruitSettings((p) => ({ ...p, rates }));
-                    }}
-                    className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
+                    placeholder="e.g. Red Wine"
                   />
                   <input
                     type="number"
                     step="0.01"
-                    value={rate.ratePerTon}
+                    value={prog.ratePerTon}
                     onChange={(e) => {
-                      const rates = [...(fruitSettings.rates || [])];
-                      rates[idx] = { ...rates[idx], ratePerTon: parseFloat(e.target.value) || 0 };
-                      setFruitSettings((p) => ({ ...p, rates }));
+                      const programs = [...(fruitSettings.programs || [])];
+                      programs[idx] = { ...programs[idx], ratePerTon: parseFloat(e.target.value) || 0 };
+                      setFruitSettings((p) => ({ ...p, programs }));
                     }}
                     className="px-2 py-1.5 border border-gray-300 rounded-md text-sm"
                   />
                   <button
                     onClick={() => {
-                      const rates = (fruitSettings.rates || []).filter((_, i) => i !== idx);
-                      setFruitSettings((p) => ({ ...p, rates }));
+                      const programs = (fruitSettings.programs || []).filter((_, i) => i !== idx);
+                      setFruitSettings((p) => ({ ...p, programs }));
                     }}
                     className="px-2 text-red-500 hover:text-red-700 text-sm"
                   >
@@ -338,15 +311,65 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
               ))}
               <button
                 onClick={() => {
+                  const id = `prog_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
                   setFruitSettings((p) => ({
                     ...p,
-                    rates: [...(p.rates || []), { vintage: new Date().getFullYear(), contractMonths: 9, ratePerTon: 0 }],
+                    programs: [...(p.programs || []), { id, name: '', description: '', ratePerTon: 0 }],
                   }));
                 }}
                 className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
               >
-                + Add Rate
+                + Add Program
               </button>
+            </div>
+          </div>
+
+          {/* Min Processing Fee & Default Contract Months */}
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Min Processing Fee ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={fruitSettings.minProcessingFee ?? 1000}
+                onChange={(e) => setFruitSettings((p) => ({ ...p, minProcessingFee: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Default Contract Length (months)</label>
+              <input
+                type="number"
+                min={1}
+                value={fruitSettings.defaultContractMonths ?? 9}
+                onChange={(e) => setFruitSettings((p) => ({ ...p, defaultContractMonths: parseInt(e.target.value) || 9 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Small Lot Fee */}
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Small Lot Fee ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={fruitSettings.smallLotFee ?? 1000}
+                onChange={(e) => setFruitSettings((p) => ({ ...p, smallLotFee: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Small Lot Threshold (tons)</label>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={fruitSettings.smallLotThresholdTons ?? 2.0}
+                onChange={(e) => setFruitSettings((p) => ({ ...p, smallLotThresholdTons: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
             </div>
           </div>
 
@@ -362,7 +385,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
               }
             }}
             disabled={fruitStatus === 'saving'}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
           >
             {fruitStatus === 'saving' ? 'Saving...' : 'Save Fruit Intake Settings'}
           </button>

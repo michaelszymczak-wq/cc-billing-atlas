@@ -8,6 +8,7 @@ const ACTION_TYPE_COLORS: Record<string, string> = {
   CUSTOM: 'bg-purple-100 text-purple-700',
   STEAM: 'bg-orange-100 text-orange-700',
   ADDITION: 'bg-green-100 text-green-700',
+  FILTER: 'bg-cyan-100 text-cyan-700',
   PROCESSFRUITTOVOLUME: 'bg-teal-100 text-teal-700',
   PROCESSFRUITTOWEIGHT: 'bg-teal-100 text-teal-700',
 };
@@ -60,7 +61,7 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
     const dups = new Set<string>();
     for (const r of rules) {
       if (!r.enabled) continue;
-      const key = `${r.actionType.toUpperCase().trim()}|${r.variation.toUpperCase().trim()}`;
+      const key = `${r.actionType.toUpperCase().trim()}|${r.variation.toUpperCase().trim()}|${(r.vesselType || '').toUpperCase().trim()}|${r.bottlesPerCase || ''}|${(r.analysisSource || '').toUpperCase().trim()}`;
       if (seen.has(key)) dups.add(key);
       seen.set(key, (seen.get(key) || 0) + 1);
     }
@@ -68,7 +69,7 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
   }, [rules]);
 
   const isDuplicate = (r: RateRule) => {
-    const key = `${r.actionType.toUpperCase().trim()}|${r.variation.toUpperCase().trim()}`;
+    const key = `${r.actionType.toUpperCase().trim()}|${r.variation.toUpperCase().trim()}|${(r.vesselType || '').toUpperCase().trim()}|${r.bottlesPerCase || ''}|${(r.analysisSource || '').toUpperCase().trim()}`;
     return r.enabled && duplicates.has(key);
   };
 
@@ -188,6 +189,10 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
           if (!r || r.length < 2) continue;
           const enabledStr = (r[9] || 'true').toLowerCase().trim();
           const maxQtyStr = (r[7] || '').trim();
+          const setupFeeModeStr = (r[10] || '').trim().toLowerCase();
+          const excludeTaxStr = (r[13] || '').trim();
+          const vesselTypeStr = (r[14] || '').trim();
+          const analysisSourceStr = (r[15] || '').trim();
           parsed.push({
             id: generateRuleId(),
             actionType: (r[0] || '').trim(),
@@ -200,6 +205,13 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
             maxQty: maxQtyStr === '' || maxQtyStr.toLowerCase() === 'infinity' ? Infinity : (parseFloat(maxQtyStr) || 0),
             notes: (r[8] || '').trim(),
             enabled: ['1', 'true', 'yes'].includes(enabledStr),
+            setupFeeMode: setupFeeModeStr === 'spread_daily' ? 'spread_daily' : 'per_action',
+            minDollar: parseFloat(r[11] || '0') || 0,
+            freeFirstPerLot: ['1', 'true', 'yes'].includes((r[12] || '').trim().toLowerCase()),
+            excludeTaxClasses: excludeTaxStr ? excludeTaxStr.split('|').map((s) => s.trim()).filter(Boolean) : undefined,
+            vesselType: vesselTypeStr || undefined,
+            analysisSource: analysisSourceStr || undefined,
+            excludeAllInclusive: ['1', 'true', 'yes'].includes((r[16] || '').trim().toLowerCase()) || undefined,
           });
         }
         setImportedRules(parsed);
@@ -236,10 +248,13 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
   // ─── CSV Export ───
 
   const handleExportCsv = () => {
-    const header = 'actionType,variation,label,billingUnit,rate,setupFee,minQty,maxQty,notes,enabled';
+    const header = 'actionType,variation,label,billingUnit,rate,setupFee,minQty,maxQty,notes,enabled,setupFeeMode,minDollar,freeFirstPerLot,excludeTaxClasses,vesselType,analysisSource,excludeAllInclusive';
     const rows = rules.map((r) =>
       [r.actionType, r.variation, r.label, r.billingUnit, r.rate, r.setupFee, r.minQty,
-       r.maxQty === Infinity ? '' : r.maxQty, r.notes.replace(/,/g, ';'), r.enabled ? '1' : '0'].join(',')
+       r.maxQty === Infinity ? '' : r.maxQty, r.notes.replace(/,/g, ';'), r.enabled ? '1' : '0',
+       r.setupFeeMode || 'per_action', r.minDollar || 0, r.freeFirstPerLot ? '1' : '0',
+       (r.excludeTaxClasses || []).join('|'), r.vesselType || '', r.analysisSource || '',
+       r.excludeAllInclusive ? '1' : '0'].join(',')
     );
     const csv = [header, ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -267,7 +282,7 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={handleAddNew} className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
+        <button onClick={handleAddNew} className="px-3 py-1.5 bg-violet-600 text-white rounded-md text-sm hover:bg-violet-700">
           + Add Rule
         </button>
         <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm hover:bg-gray-50">
@@ -318,8 +333,8 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
               <th className="px-3 py-2 text-left font-medium text-gray-500">Unit</th>
               <th className="px-3 py-2 text-right font-medium text-gray-500">Rate</th>
               <th className="px-3 py-2 text-right font-medium text-gray-500">Setup Fee</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-500">Min</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-500">Max</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-500">Min ($)</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-500">Material</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Notes</th>
               <th className="px-3 py-2 text-center font-medium text-gray-500 w-28">Actions</th>
             </tr>
@@ -342,7 +357,7 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
                   <td className="px-2 py-1.5 text-center">
                     <button
                       onClick={() => handleToggleEnabled(rule.id)}
-                      className={`w-8 h-4 rounded-full relative transition-colors ${rule.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+                      className={`w-8 h-4 rounded-full relative transition-colors ${rule.enabled ? 'bg-violet-500' : 'bg-gray-300'}`}
                     >
                       <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${rule.enabled ? 'left-4' : 'left-0.5'}`} />
                     </button>
@@ -352,7 +367,17 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
                       {rule.actionType}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-gray-700 max-w-[150px] truncate" title={rule.variation}>{rule.variation || '\u2014'}</td>
+                  <td className="px-3 py-1.5 text-gray-700 max-w-[200px]" title={rule.variation}>
+                    <span className="truncate">{rule.variation || '\u2014'}</span>
+                    {rule.vesselType && (
+                      <span className="ml-1.5 px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] rounded font-medium">{rule.vesselType}</span>
+                    )}
+                    {rule.analysisSource && (
+                      <span className="ml-1.5 px-1.5 py-0.5 bg-blue-50 text-blue-600 text-[10px] rounded font-medium">
+                        {{ 'IN-HOUSE': 'In House', 'ETS_MANUAL': 'ETS', 'MY_ENOLOGIST': 'MyEnol' }[rule.analysisSource] || rule.analysisSource}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 font-medium max-w-[200px] truncate" title={rule.label}>{rule.label}</td>
                   <td className="px-3 py-1.5 text-gray-500 text-xs">{rule.billingUnit}</td>
                   <td className="px-3 py-1.5 text-right">
@@ -361,8 +386,8 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
                   <td className="px-3 py-1.5 text-right">
                     <InlineNumberCell value={rule.setupFee} onChange={(v) => handleInlineEdit(rule.id, 'setupFee', v)} />
                   </td>
-                  <td className="px-3 py-1.5 text-right text-gray-500 text-xs">{isFruit ? rule.minQty : ''}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-500 text-xs">{isFruit ? (rule.maxQty === Infinity ? '\u221E' : rule.maxQty) : ''}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 text-xs">{(rule.minDollar && rule.minDollar > 0) ? `$${rule.minDollar.toFixed(2)}` : ''}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 text-xs">{(rule.materialRate && rule.materialRate > 0) ? `$${rule.materialRate.toFixed(3)}` : ''}</td>
                   <td className="px-3 py-1.5 text-gray-400 text-xs max-w-[100px] truncate" title={rule.notes}>{rule.notes}</td>
                   <td className="px-3 py-1.5 text-center">
                     <div className="flex items-center justify-center gap-1">
@@ -428,7 +453,7 @@ export default function RateTableManager({ rules, onRulesChange }: RateTableMana
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowImportPreview(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
               {rules.length > 0 && (
-                <button onClick={handleImportMerge} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                <button onClick={handleImportMerge} className="px-4 py-2 text-sm bg-violet-600 text-white rounded-md hover:bg-violet-700">
                   Merge
                 </button>
               )}
@@ -470,13 +495,13 @@ function InlineNumberCell({ value, onChange }: { value: number; onChange: (v: nu
         onBlur={commitEdit}
         onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(false); }}
         autoFocus
-        className="w-20 px-1 py-0 border border-blue-400 rounded text-right text-sm"
+        className="w-20 px-1 py-0 border border-violet-400 rounded text-right text-sm"
       />
     );
   }
 
   return (
-    <span onClick={startEdit} className="cursor-pointer hover:text-blue-600" title="Click to edit">
+    <span onClick={startEdit} className="cursor-pointer hover:text-violet-600" title="Click to edit">
       ${value.toFixed(2)}
     </span>
   );
