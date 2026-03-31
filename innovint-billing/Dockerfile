@@ -30,6 +30,7 @@ RUN npm ci --omit=dev
 # Copy built artifacts
 COPY --from=build /app/backend/dist backend/dist
 COPY --from=build /app/backend/public backend/public
+COPY --from=build /app/backend/src/assets backend/dist/assets
 
 ENV PORT=3001
 ENV USE_FIRESTORE=true

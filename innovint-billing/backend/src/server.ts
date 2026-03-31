@@ -11,7 +11,7 @@ import invoiceExportRouter from './routes/invoiceExport';
 import usersRouter from './routes/users';
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3004;
 
 // Serve frontend static files in production
 const publicDir = path.join(__dirname, '..', 'public');
