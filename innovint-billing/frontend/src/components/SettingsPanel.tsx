@@ -14,8 +14,9 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
   const [hasToken, setHasToken] = useState(false);
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [barrelSnapshots, setBarrelSnapshots] = useState<BarrelSnapshots>({ snap1Day: 1, snap2Day: 15, snap3Day: 'last' });
+  const [barrelSnapshots, setBarrelSnapshots] = useState<BarrelSnapshots>({ snap1Day: 1, snap2Day: 15, snap3Day: 'last', barrelRate: 0, puncheonRate: 0, tirageRate: 0 });
   const [bulkStorageRate, setBulkStorageRate] = useState<number>(0);
+  const [bulkStorageMinimum, setBulkStorageMinimum] = useState<number>(0);
   const [snapStatus, setSnapStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [fruitSettings, setFruitSettings] = useState<FruitIntakeSettings>({
     actionTypeKey: 'FRUITINTAKE',
@@ -37,6 +38,7 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
         setHasToken(s.hasToken);
         if (s.barrelSnapshots) setBarrelSnapshots(s.barrelSnapshots);
         if (s.bulkStorageRate !== undefined) setBulkStorageRate(s.bulkStorageRate);
+        if (s.bulkStorageMinimum !== undefined) setBulkStorageMinimum(s.bulkStorageMinimum);
         if (s.fruitIntakeSettings) setFruitSettings(s.fruitIntakeSettings);
       })
       .catch(() => {
@@ -125,11 +127,20 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
             onChange={(e) => setBulkStorageRate(parseFloat(e.target.value) || 0)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
           />
+          <label className="block text-sm font-medium text-gray-700 mb-1 mt-3">Minimum charge ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={bulkStorageMinimum}
+            onChange={(e) => setBulkStorageMinimum(parseFloat(e.target.value) || 0)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+          />
           <button
             onClick={async () => {
               setStatus('saving');
               try {
-                await saveSettings({ bulkStorageRate });
+                await saveSettings({ bulkStorageRate, bulkStorageMinimum });
                 setStatus('success');
                 setTimeout(() => setStatus('idle'), 2000);
               } catch {
@@ -190,6 +201,56 @@ export default function SettingsPanel({ onSettingsSaved }: SettingsPanelProps) {
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
+          </div>
+          <p className="text-sm font-medium text-gray-700 mt-4 mb-2">Empty Barrel Rates ($/barrel/month)</p>
+          <div className="grid grid-cols-3 gap-3 items-end">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Barrel (Standard)</label>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={barrelSnapshots.barrelRate}
+                onChange={(e) => setBarrelSnapshots((prev) => ({ ...prev, barrelRate: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Barrel (Puncheon)</label>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={barrelSnapshots.puncheonRate}
+                onChange={(e) => setBarrelSnapshots((prev) => ({ ...prev, puncheonRate: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Tirage</label>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={barrelSnapshots.tirageRate}
+                onChange={(e) => setBarrelSnapshots((prev) => ({ ...prev, tirageRate: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={barrelSnapshots.skipCurrentYearBarrels ?? false}
+                onChange={(e) => setBarrelSnapshots((prev) => ({ ...prev, skipCurrentYearBarrels: e.target.checked }))}
+                className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+              />
+              Skip barrels whose "Year First Used" equals the billing year
+            </label>
+            <p className="text-xs text-gray-400 mt-1 ml-6">
+              When enabled, barrels first used in the current billing year are excluded from empty barrel charges.
+            </p>
           </div>
           <button
             onClick={async () => {

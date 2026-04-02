@@ -39,6 +39,7 @@ export function generateInvoicePDF(invoice: CustomerInvoice): Promise<Buffer> {
     doc.on('error', reject);
 
     const pageWidth = 612 - 100; // letter width minus margins
+    const pageBottom = 792 - 50; // letter height minus bottom margin
 
     // ─── Header ───
     const headerY = 50;
@@ -133,25 +134,37 @@ export function generateInvoicePDF(invoice: CustomerInvoice): Promise<Buffer> {
       amount: 92,
     };
 
-    // Table header
-    const headerHeight = 28;
-    doc.rect(50, currentY, pageWidth, headerHeight).fill(COLORS.headerBg);
-    const headerTextY = currentY + 8;
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.white);
-    doc.text('Items', colX.item + 8, headerTextY, { width: colWidths.item });
+    // Table header drawing helper
     const isFruitIntake = invoice.invoiceType === 'fruit-intake';
-    doc.text(isFruitIntake ? 'Tons' : 'Quantity', colX.qty, headerTextY, { width: colWidths.qty, align: 'right' });
-    doc.text(isFruitIntake ? 'Contract Total' : 'Price', colX.price, headerTextY, { width: colWidths.price, align: 'right' });
-    doc.text(isFruitIntake ? 'Installment Amt' : 'Amount', colX.amount, headerTextY, { width: colWidths.amount, align: 'right' });
-    currentY += headerHeight;
+    const headerHeight = 28;
+
+    function drawTableHeader() {
+      doc.rect(50, currentY, pageWidth, headerHeight).fill(COLORS.headerBg);
+      const headerTextY = currentY + 8;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.white);
+      doc.text('Items', colX.item + 8, headerTextY, { width: colWidths.item });
+      doc.text(isFruitIntake ? 'Tons' : 'Quantity', colX.qty, headerTextY, { width: colWidths.qty, align: 'right' });
+      doc.text(isFruitIntake ? 'Contract Total' : 'Price', colX.price, headerTextY, { width: colWidths.price, align: 'right' });
+      doc.text(isFruitIntake ? 'Installment Amt' : 'Amount', colX.amount, headerTextY, { width: colWidths.amount, align: 'right' });
+      currentY += headerHeight;
+    }
+
+    drawTableHeader();
 
     // Table rows (exclude merchant fee from line items display — show separately)
     const displayItems = invoice.lineItems.filter(li => li.description !== 'Merchant Fee (3%)');
     const merchantFeeItem = invoice.lineItems.find(li => li.description === 'Merchant Fee (3%)');
+    const rowHeight = 24;
 
     for (let i = 0; i < displayItems.length; i++) {
+      // Page break check before each row
+      if (currentY + rowHeight > pageBottom) {
+        doc.addPage();
+        currentY = 50;
+        drawTableHeader();
+      }
+
       const item = displayItems[i];
-      const rowHeight = 24;
       const bgColor = i % 2 === 0 ? COLORS.white : COLORS.lightGray;
       doc.rect(50, currentY, pageWidth, rowHeight).fill(bgColor);
       const rowTextY = currentY + 7;
@@ -161,6 +174,13 @@ export function generateInvoicePDF(invoice: CustomerInvoice): Promise<Buffer> {
       doc.text(fmt(item.price), colX.price, rowTextY, { width: colWidths.price, align: 'right' });
       doc.text(fmt(item.amount), colX.amount, rowTextY, { width: colWidths.amount, align: 'right' });
       currentY += rowHeight;
+    }
+
+    // Page break check before footer section (~80px needed for subtotal + fee + total)
+    const footerHeight = 52 + (merchantFeeItem ? 18 : 0) + 34;
+    if (currentY + footerHeight > pageBottom) {
+      doc.addPage();
+      currentY = 50;
     }
 
     // Bottom border

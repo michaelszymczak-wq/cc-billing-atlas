@@ -403,9 +403,9 @@ export default function RuleEditorModal({ rule, onSave, onSaveAndAdd, onClose }:
                   onChange={(e) => update('excludeAllInclusive', e.target.checked || undefined)}
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm font-medium text-gray-700">Exclude all-inclusive lots</span>
+                <span className="text-sm font-medium text-gray-700">Out of Program only</span>
               </label>
-              <p className="text-xs text-gray-400 mt-1 ml-6">Lots tagged "all-inclusive" will be matched at $0</p>
+              <p className="text-xs text-gray-400 mt-1 ml-6">Only lots tagged "OOP" will be charged; all-inclusive lots matched at $0</p>
             </div>
 
             {/* Setup Fee Mode (only when setupFee > 0) */}

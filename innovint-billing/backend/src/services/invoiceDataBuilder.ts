@@ -6,9 +6,11 @@ import {
   CustomerInvoice,
   CustomerRecord,
   FruitIntakeRecord,
+  InvoiceCategoryTotals,
   InvoiceCustomerSummary,
   InvoiceLineItem,
   InvoicePreviewResponse,
+  InvoiceSections,
 } from '../types';
 
 const MERCHANT_FEE_RATE = 0.03;
@@ -61,8 +63,16 @@ export function buildInvoicePreview(
   month: string,
   year: number,
   excludedCustomers: string[],
-  customers: CustomerRecord[]
+  customers: CustomerRecord[],
+  sections?: InvoiceSections
 ): InvoicePreviewResponse {
+  const sec = {
+    actions: sections?.actions !== false,
+    bulkStorage: sections?.bulkStorage !== false,
+    barrelStorage: sections?.barrelStorage !== false,
+    addOns: sections?.addOns !== false,
+    fruitIntake: sections?.fruitIntake !== false,
+  };
   const excludedSet = new Set(excludedCustomers.map(c => c.toUpperCase()));
   const issueDate = formatIssueDate(month, year);
 
@@ -72,10 +82,15 @@ export function buildInvoicePreview(
     if (c.code) customerByCode.set(c.code, c);
   }
 
+  // Helper: strip vessel-type suffix from barrel owner codes (e.g. "ABC-Puncheon" → "ABC")
+  function barrelBaseOwner(code: string): string {
+    return code.replace(/-(Puncheon|Tirage)$/, '');
+  }
+
   // Collect all owner codes
   const allOwners = new Set<string>();
   actions.filter(a => a.matched).forEach(a => allOwners.add(a.ownerCode));
-  barrelInv.forEach(b => allOwners.add(b.ownerCode));
+  barrelInv.forEach(b => allOwners.add(barrelBaseOwner(b.ownerCode)));
   bulkInv.forEach(b => allOwners.add(b.ownerCode));
   fruitRecords.forEach(f => allOwners.add(f.ownerCode));
   addOns.forEach(a => allOwners.add(a.ownerCode));
@@ -98,65 +113,85 @@ export function buildInvoicePreview(
     // ─── Winery Services Invoice ───
     let wineryServices: CustomerInvoice | null = null;
     const wsLineItems: InvoiceLineItem[] = [];
+    const catTotals: InvoiceCategoryTotals = { actions: 0, bulkStorage: 0, barrelStorage: 0, addOns: 0, fruitIntake: 0 };
 
     // Actions: group by matchedRuleLabel
-    const ownerActions = actions.filter(a => a.ownerCode === ownerCode && a.matched);
-    const grouped = new Map<string, { qty: number; total: number }>();
-    for (const row of ownerActions) {
-      const label = (row.matchedRuleLabel || row.actionType).replace(' (rectified)', '');
-      const existing = grouped.get(label);
-      const qty = (row.quantity && row.quantity > 0) ? row.quantity : (row.hours && row.hours > 0 ? row.hours : 1);
-      if (existing) {
-        existing.qty += qty;
-        existing.total += row.total;
-      } else {
-        grouped.set(label, { qty, total: row.total });
+    if (sec.actions) {
+      const ownerActions = actions.filter(a => a.ownerCode === ownerCode && a.matched);
+      const grouped = new Map<string, { qty: number; total: number }>();
+      for (const row of ownerActions) {
+        const label = (row.matchedRuleLabel || row.actionType).replace(' (rectified)', '');
+        const existing = grouped.get(label);
+        const qty = (row.quantity && row.quantity > 0) ? row.quantity : (row.hours && row.hours > 0 ? row.hours : 1);
+        if (existing) {
+          existing.qty += qty;
+          existing.total += row.total;
+        } else {
+          grouped.set(label, { qty, total: row.total });
+        }
       }
-    }
-    for (const [label, g] of grouped) {
-      const price = g.qty > 0 ? round2(g.total / g.qty) : 0;
-      wsLineItems.push({
-        description: label,
-        quantity: round2(g.qty),
-        price,
-        amount: round2(g.total),
-      });
+      for (const [label, g] of grouped) {
+        const price = g.qty > 0 ? round2(g.total / g.qty) : 0;
+        wsLineItems.push({
+          description: label,
+          quantity: round2(g.qty),
+          price,
+          amount: round2(g.total),
+        });
+        catTotals.actions += round2(g.total);
+      }
+      catTotals.actions = round2(catTotals.actions);
     }
 
-    // Barrel inventory
-    const ownerBarrels = barrelInv.filter(b => b.ownerCode === ownerCode);
-    for (const b of ownerBarrels) {
-      wsLineItems.push({
-        description: 'Barrel Storage',
-        quantity: round2(b.avgBarrels),
-        price: round2(b.rate),
-        amount: round2(b.charge),
-      });
+    // Barrel inventory (match by base owner code, label by vessel type)
+    if (sec.barrelStorage) {
+      const ownerBarrels = barrelInv.filter(b => barrelBaseOwner(b.ownerCode) === ownerCode);
+      for (const b of ownerBarrels) {
+        let desc = 'Barrel Storage';
+        if (b.ownerCode.endsWith('-Puncheon')) desc = 'Puncheon Storage';
+        else if (b.ownerCode.endsWith('-Tirage')) desc = 'Tirage Storage';
+        wsLineItems.push({
+          description: desc,
+          quantity: round2(b.avgBarrels),
+          price: round2(b.rate),
+          amount: round2(b.charge),
+        });
+        catTotals.barrelStorage += round2(b.charge);
+      }
+      catTotals.barrelStorage = round2(catTotals.barrelStorage);
     }
 
     // Bulk inventory
-    const ownerBulk = bulkInv.filter(b => b.ownerCode === ownerCode);
-    for (const b of ownerBulk) {
-      wsLineItems.push({
-        description: 'Bulk Wine Storage',
-        quantity: round2(b.billingVolume),
-        price: round2(b.rate),
-        amount: round2(b.totalCost),
-      });
+    if (sec.bulkStorage) {
+      const ownerBulk = bulkInv.filter(b => b.ownerCode === ownerCode);
+      for (const b of ownerBulk) {
+        wsLineItems.push({
+          description: 'Bulk Wine Storage',
+          quantity: round2(b.billingVolume),
+          price: round2(b.rate),
+          amount: round2(b.totalCost),
+        });
+        catTotals.bulkStorage += round2(b.totalCost);
+      }
+      catTotals.bulkStorage = round2(catTotals.bulkStorage);
     }
 
     // Add-ons for billing month
-    const ownerAddOns = addOns.filter(a => {
-      if (a.ownerCode !== ownerCode) return false;
-      return a.date.startsWith(`${yearStr}-${monthStr}`);
-    });
-    for (const addon of ownerAddOns) {
-      wsLineItems.push({
-        description: addon.rateRuleLabel,
-        quantity: round2(addon.quantity),
-        price: round2(addon.rate),
-        amount: round2(addon.totalCost),
+    if (sec.addOns) {
+      const ownerAddOns = addOns.filter(a => {
+        if (a.ownerCode !== ownerCode) return false;
+        return a.date.startsWith(`${yearStr}-${monthStr}`);
       });
+      for (const addon of ownerAddOns) {
+        wsLineItems.push({
+          description: addon.rateRuleLabel,
+          quantity: round2(addon.quantity),
+          price: round2(addon.rate),
+          amount: round2(addon.totalCost),
+        });
+        catTotals.addOns += round2(addon.totalCost);
+      }
+      catTotals.addOns = round2(catTotals.addOns);
     }
 
     if (wsLineItems.length > 0) {
@@ -187,7 +222,7 @@ export function buildInvoicePreview(
     let fruitIntake: CustomerInvoice | null = null;
     const fiLineItems: InvoiceLineItem[] = [];
     const monthKey = `${month} ${year}`;
-    const ownerFruit = fruitRecords.filter(f => f.ownerCode === ownerCode);
+    const ownerFruit = sec.fruitIntake ? fruitRecords.filter(f => f.ownerCode === ownerCode) : [];
 
     let installmentNumber = 0;
     let totalInstallments = 0;
@@ -216,6 +251,7 @@ export function buildInvoicePreview(
 
     if (fiLineItems.length > 0) {
       const subtotal = round2(fiLineItems.reduce((s, li) => s + li.amount, 0));
+      catTotals.fruitIntake = subtotal;
       const feeItem = buildMerchantFeeItem(subtotal);
       fiLineItems.push(feeItem);
       const totalDue = round2(subtotal + feeItem.amount);
@@ -249,6 +285,7 @@ export function buildInvoicePreview(
         wineryServices,
         fruitIntake,
         combinedTotal,
+        categoryTotals: catTotals,
       });
     }
   }

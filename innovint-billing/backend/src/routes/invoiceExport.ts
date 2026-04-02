@@ -5,6 +5,7 @@ import { loadSettings } from '../persistence';
 import { loadSessionResult } from '../persistence';
 import { buildInvoicePreview } from '../services/invoiceDataBuilder';
 import { generateInvoicePDF } from '../services/pdfInvoiceGenerator';
+import { InvoiceSections } from '../types';
 
 const router = Router();
 
@@ -22,11 +23,12 @@ async function loadSession(sessionId: string) {
 
 // POST /preview — generate invoice preview data
 router.post('/preview', async (req: Request, res: Response) => {
-  const { sessionId, month, year, excludedCustomers } = req.body as {
+  const { sessionId, month, year, excludedCustomers, sections } = req.body as {
     sessionId: string;
     month: string;
     year: number;
     excludedCustomers?: string[];
+    sections?: InvoiceSections;
   };
 
   const session = await loadSession(sessionId);
@@ -49,7 +51,8 @@ router.post('/preview', async (req: Request, res: Response) => {
     month,
     year,
     excluded,
-    settings.customers
+    settings.customers,
+    sections
   );
 
   res.json(preview);
@@ -57,11 +60,12 @@ router.post('/preview', async (req: Request, res: Response) => {
 
 // POST /download — generate PDFs and stream as ZIP
 router.post('/download', async (req: Request, res: Response) => {
-  const { sessionId, month, year, excludedCustomers } = req.body as {
+  const { sessionId, month, year, excludedCustomers, sections } = req.body as {
     sessionId: string;
     month: string;
     year: number;
     excludedCustomers?: string[];
+    sections?: InvoiceSections;
   };
 
   const session = await loadSession(sessionId);
@@ -84,7 +88,8 @@ router.post('/download', async (req: Request, res: Response) => {
     month,
     year,
     excluded,
-    settings.customers
+    settings.customers,
+    sections
   );
 
   const monthShort = month.substring(0, 3);

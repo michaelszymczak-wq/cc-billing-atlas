@@ -1,5 +1,5 @@
 import { parse } from 'csv-parse/sync';
-import { BarrelBillingRow, BarrelSnapshots, ProgressEvent, RateRule } from '../types';
+import { BarrelBillingRow, BarrelSnapshots, ProgressEvent } from '../types';
 import { getDaysInMonth, getMonthIndex } from './innovintApi';
 
 const BASE_URL = 'https://sutter.innovint.us';
@@ -72,6 +72,7 @@ interface VesselRow {
   vesselType: string;
   owner: string;
   style: string;
+  yearFirstUsed: string;
 }
 
 async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
@@ -93,6 +94,7 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
   const vesselTypeIdx = headerRow.findIndex((h: string) => h.includes('vessel type'));
   const ownerIdx = headerRow.findIndex((h: string) => h.includes('owner') || h.includes('access'));
   const styleIdx = headerRow.findIndex((h: string) => h === 'style');
+  const yearFirstUsedIdx = headerRow.findIndex((h: string) => h.includes('year first used'));
 
   const result: VesselRow[] = [];
   for (let i = 3; i < allRows.length; i++) {
@@ -103,6 +105,7 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
       vesselType: vesselTypeIdx >= 0 ? (row[vesselTypeIdx] ?? '') : '',
       owner: ownerIdx >= 0 ? (row[ownerIdx] ?? '').trim() : '',
       style: styleIdx >= 0 ? (row[styleIdx] ?? '').trim() : '',
+      yearFirstUsed: yearFirstUsedIdx >= 0 ? (row[yearFirstUsedIdx] ?? '').trim() : '',
     });
   }
 
@@ -111,10 +114,10 @@ async function downloadAndParseCsv(fileUrl: string): Promise<VesselRow[]> {
 
 // ─── Empty barrel filter (ported from GAS) ───
 
-function countEmptyBarrels(rows: VesselRow[]): Map<string, number> {
+function countEmptyBarrels(rows: VesselRow[], skipYear?: number): Map<string, number> {
   const counts = new Map<string, number>();
 
-  for (const { fill, vesselType, owner, style } of rows) {
+  for (const { fill, vesselType, owner, style, yearFirstUsed } of rows) {
     const fillValue = fill.trim();
     const fillNum = parseFloat(fillValue);
     const isEmpty = isNaN(fillNum) || fillNum === 0 || fillValue === '';
@@ -122,6 +125,11 @@ function countEmptyBarrels(rows: VesselRow[]): Map<string, number> {
     const isBarrel = vt === 'BARREL';
     const isTirage = vt === 'TIRAGE';
     const ownerCode = owner.trim();
+
+    // Skip barrels whose "Year First Used" matches the current billing year
+    if (skipYear && yearFirstUsed && parseInt(yearFirstUsed, 10) === skipYear) {
+      continue;
+    }
 
     if (isEmpty && (isBarrel || isTirage) && ownerCode) {
       let key: string;
@@ -139,31 +147,6 @@ function countEmptyBarrels(rows: VesselRow[]): Map<string, number> {
   return counts;
 }
 
-// ─── Rate rule matching ───
-
-function findBarrelStorageRules(rules: RateRule[]): { regular?: RateRule; puncheon?: RateRule; tirage?: RateRule } {
-  const keywords = ['EMPTY', 'BARREL', 'STORAGE'];
-  let regular: RateRule | undefined;
-  let puncheon: RateRule | undefined;
-  let tirage: RateRule | undefined;
-
-  for (const rule of rules) {
-    if (!rule.enabled) continue;
-    const combined = `${rule.actionType} ${rule.variation}`.toUpperCase();
-    if (!keywords.every((kw) => combined.includes(kw))) continue;
-
-    if (combined.includes('TIRAGE')) {
-      tirage = rule;
-    } else if (combined.includes('PUNCHEON')) {
-      puncheon = rule;
-    } else if (!regular) {
-      regular = rule;
-    }
-  }
-
-  return { regular, puncheon, tirage };
-}
-
 // ─── Snapshot timestamp builder ───
 
 function buildTimestamp(year: number, monthIndex: number, day: number): string {
@@ -179,7 +162,8 @@ async function runSingleSnapshot(
   monthIndex: number,
   day: number,
   snapIdx: number,
-  onProgress: (event: ProgressEvent) => void
+  onProgress: (event: ProgressEvent) => void,
+  skipYear?: number
 ): Promise<Map<string, number>> {
   const snapLabel = `Snapshot ${snapIdx + 1}/3 (day ${day})`;
 
@@ -230,7 +214,7 @@ async function runSingleSnapshot(
     return new Map();
   }
 
-  const counts = countEmptyBarrels(rows);
+  const counts = countEmptyBarrels(rows, skipYear);
   onProgress({
     step: 'barrels',
     message: `${snapLabel}: found ${counts.size} owner codes with empty barrels.`,
@@ -247,65 +231,38 @@ export async function runBarrelInventory(
   token: string,
   month: string,
   year: number,
-  rateRules: RateRule[],
   snapshots: BarrelSnapshots,
   onProgress: (event: ProgressEvent) => void
 ): Promise<BarrelBillingRow[]> {
   const monthIndex = getMonthIndex(month);
   const totalDays = getDaysInMonth(month, year);
 
-  const { regular: regularRule, puncheon: puncheonRule, tirage: tirageRule } = findBarrelStorageRules(rateRules);
-  const regularRate = regularRule?.rate ?? 0;
-  const regularSetupFee = regularRule?.setupFee ?? 0;
-  const puncheonRate = puncheonRule?.rate ?? 0;
-  const puncheonSetupFee = puncheonRule?.setupFee ?? 0;
-  const tirageRate = tirageRule?.rate ?? 0;
-  const tirageSetupFee = tirageRule?.setupFee ?? 0;
+  const regularRate = snapshots.barrelRate ?? 0;
+  const puncheonRate = snapshots.puncheonRate ?? 0;
+  const tirageRate = snapshots.tirageRate ?? 0;
 
-  if (!regularRule && !puncheonRule && !tirageRule) {
-    onProgress({
-      step: 'barrels',
-      message: 'Warning: No Empty Barrel Storage rate rules found. Charges will be $0.',
-      pct: -1,
-    });
-  } else {
-    if (regularRule) {
-      onProgress({
-        step: 'barrels',
-        message: `Regular rate: "${regularRule.label}": $${regularRate}/barrel + $${regularSetupFee} setup.`,
-        pct: -1,
-      });
-    }
-    if (puncheonRule) {
-      onProgress({
-        step: 'barrels',
-        message: `Puncheon rate: "${puncheonRule.label}": $${puncheonRate}/barrel + $${puncheonSetupFee} setup.`,
-        pct: -1,
-      });
-    }
-    if (tirageRule) {
-      onProgress({
-        step: 'barrels',
-        message: `Tirage rate: "${tirageRule.label}": $${tirageRate}/barrel + $${tirageSetupFee} setup.`,
-        pct: -1,
-      });
-    }
-  }
+  onProgress({
+    step: 'barrels',
+    message: `Barrel rates — Standard: $${regularRate}/mo, Puncheon: $${puncheonRate}/mo, Tirage: $${tirageRate}/mo.`,
+    pct: -1,
+  });
 
   // Resolve snapshot days
   const snap3Day = snapshots.snap3Day === 'last' ? totalDays : snapshots.snap3Day;
   const snapDays = [snapshots.snap1Day, snapshots.snap2Day, snap3Day];
 
+  const skipYear = snapshots.skipCurrentYearBarrels ? year : undefined;
+
   onProgress({
     step: 'barrels',
-    message: `Starting barrel inventory for ${month} ${year}. Snapshots on days: ${snapDays.join(', ')}.`,
+    message: `Starting barrel inventory for ${month} ${year}. Snapshots on days: ${snapDays.join(', ')}.${skipYear ? ` Skipping barrels first used in ${skipYear}.` : ''}`,
     pct: 60,
   });
 
   // Run three snapshots sequentially
   const snapCounts: Map<string, number>[] = [];
   for (let i = 0; i < snapDays.length; i++) {
-    const counts = await runSingleSnapshot(wineryId, token, year, monthIndex, snapDays[i], i, onProgress);
+    const counts = await runSingleSnapshot(wineryId, token, year, monthIndex, snapDays[i], i, onProgress, skipYear);
     snapCounts.push(counts);
 
     onProgress({
@@ -330,8 +287,7 @@ export async function runBarrelInventory(
     const isPuncheon = ownerCode.endsWith('-Puncheon');
     const isTirage = ownerCode.endsWith('-Tirage');
     const rate = isTirage ? tirageRate : isPuncheon ? puncheonRate : regularRate;
-    const setupFee = isTirage ? tirageSetupFee : isPuncheon ? puncheonSetupFee : regularSetupFee;
-    const charge = Math.round((avgBarrels * rate + setupFee) * 100) / 100;
+    const charge = Math.round(avgBarrels * rate * 100) / 100;
     billingRows.push({ ownerCode, snap1, snap2, snap3, avgBarrels, rate, charge });
   }
 

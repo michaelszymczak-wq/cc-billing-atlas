@@ -16,6 +16,7 @@ router.get('/', async (_req: Request, res: Response) => {
     lastUsedYear: settings.lastUsedYear,
     barrelSnapshots: settings.barrelSnapshots,
     bulkStorageRate: settings.bulkStorageRate,
+    bulkStorageMinimum: settings.bulkStorageMinimum,
     customers: settings.customers,
     fruitIntakeSettings: settings.fruitIntakeSettings,
     billableAddOns: settings.billableAddOns,
@@ -35,6 +36,7 @@ router.post('/', async (req: Request, res: Response) => {
     lastUsedYear: body.lastUsedYear !== undefined ? body.lastUsedYear : current.lastUsedYear,
     barrelSnapshots: body.barrelSnapshots !== undefined ? body.barrelSnapshots : current.barrelSnapshots,
     bulkStorageRate: (body as Record<string, unknown>).bulkStorageRate !== undefined ? (body as Record<string, unknown>).bulkStorageRate as number : current.bulkStorageRate,
+    bulkStorageMinimum: (body as Record<string, unknown>).bulkStorageMinimum !== undefined ? (body as Record<string, unknown>).bulkStorageMinimum as number : current.bulkStorageMinimum,
     fruitIntake: current.fruitIntake,
     customers: (body as Record<string, unknown>).customers !== undefined ? (body as Record<string, unknown>).customers as CustomerRecord[] : current.customers,
     fruitIntakeSettings: (body as Record<string, unknown>).fruitIntakeSettings !== undefined ? (body as Record<string, unknown>).fruitIntakeSettings as FruitIntakeSettings : current.fruitIntakeSettings,
@@ -82,6 +84,10 @@ router.put('/barrel-snapshots', async (req: Request, res: Response) => {
     snap1Day: body.snap1Day ?? current.barrelSnapshots.snap1Day,
     snap2Day: body.snap2Day ?? current.barrelSnapshots.snap2Day,
     snap3Day: body.snap3Day ?? current.barrelSnapshots.snap3Day,
+    skipCurrentYearBarrels: body.skipCurrentYearBarrels ?? current.barrelSnapshots.skipCurrentYearBarrels,
+    barrelRate: body.barrelRate ?? current.barrelSnapshots.barrelRate,
+    puncheonRate: body.puncheonRate ?? current.barrelSnapshots.puncheonRate,
+    tirageRate: body.tirageRate ?? current.barrelSnapshots.tirageRate,
   };
   await saveSettings(current);
   res.json({ success: true, barrelSnapshots: current.barrelSnapshots });

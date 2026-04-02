@@ -60,6 +60,10 @@ export interface BarrelSnapshots {
   snap1Day: number;
   snap2Day: number;
   snap3Day: number | 'last';
+  skipCurrentYearBarrels?: boolean;
+  barrelRate: number;
+  puncheonRate: number;
+  tirageRate: number;
 }
 
 export interface FruitProgram {
@@ -171,12 +175,21 @@ export interface CustomerInvoice {
   totalDue: number;
 }
 
+export interface InvoiceCategoryTotals {
+  actions: number;
+  bulkStorage: number;
+  barrelStorage: number;
+  addOns: number;
+  fruitIntake: number;
+}
+
 export interface InvoiceCustomerSummary {
   ownerCode: string;
   customerName: string;
   wineryServices: CustomerInvoice | null;
   fruitIntake: CustomerInvoice | null;
   combinedTotal: number;
+  categoryTotals: InvoiceCategoryTotals;
 }
 
 export interface InvoicePreviewResponse {
@@ -196,6 +209,7 @@ export interface AppConfig {
   lastUsedYear: number;
   barrelSnapshots: BarrelSnapshots;
   bulkStorageRate: number;
+  bulkStorageMinimum: number;
   customers: CustomerRecord[];
   fruitIntakeSettings: FruitIntakeSettings;
   billableAddOns: BillableAddOn[];
@@ -281,6 +295,7 @@ export async function saveSettings(data: {
   lastUsedMonth?: string;
   lastUsedYear?: number;
   bulkStorageRate?: number;
+  bulkStorageMinimum?: number;
 }): Promise<{ success: boolean }> {
   const res = await apiFetch(`${BASE_URL}/settings`, {
     method: 'POST',
@@ -517,11 +532,20 @@ export async function deleteBillableAddOn(id: string): Promise<BillableAddOn[]> 
 
 // ─── Invoice Export API ───
 
+export interface InvoiceSections {
+  actions?: boolean;
+  bulkStorage?: boolean;
+  barrelStorage?: boolean;
+  addOns?: boolean;
+  fruitIntake?: boolean;
+}
+
 export async function getInvoicePreview(params: {
   sessionId: string;
   month: string;
   year: number;
   excludedCustomers?: string[];
+  sections?: InvoiceSections;
 }): Promise<InvoicePreviewResponse> {
   const res = await apiFetch(`${BASE_URL}/export/invoices/preview`, {
     method: 'POST',
@@ -540,6 +564,7 @@ export async function downloadInvoiceZip(params: {
   month: string;
   year: number;
   excludedCustomers?: string[];
+  sections?: InvoiceSections;
 }): Promise<{ blob: Blob; filename: string }> {
   const res = await apiFetch(`${BASE_URL}/export/invoices/download`, {
     method: 'POST',

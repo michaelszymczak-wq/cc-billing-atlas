@@ -225,6 +225,7 @@ export default function App() {
               })
             }
             onNavigate={(p) => setPage(p as Page)}
+            customerCodes={(config.customers || []).map(c => c.code).filter(Boolean).sort()}
           />
         )}
         {page === 'rate-table' && canSee('rate-table') && config && (

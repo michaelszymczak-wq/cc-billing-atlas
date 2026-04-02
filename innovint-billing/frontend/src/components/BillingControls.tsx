@@ -49,10 +49,11 @@ interface BillingControlsProps {
   billingState: BillingRunState;
   onBillingStateChange: (updater: BillingRunState | ((prev: BillingRunState) => BillingRunState)) => void;
   onNavigate?: (page: string) => void;
+  customerCodes?: string[];
 }
 
 export default function BillingControls({
-  hasSettings, rateRules, billingState, onBillingStateChange, onNavigate,
+  hasSettings, rateRules, billingState, onBillingStateChange, onNavigate, customerCodes,
 }: BillingControlsProps) {
   const { month, year, running, progress, logs, stepStatus, results, sessionId } = billingState;
   const [fruitData, setFruitData] = useState<FruitIntakeRunResult | null>(null);
@@ -157,12 +158,15 @@ export default function BillingControls({
   }, [month, year, rateRules, onBillingStateChange]);
 
   const allOwnerCodes = useMemo(() => {
-    if (!results) return [];
     const codes = new Set<string>();
+    if (customerCodes) {
+      for (const c of customerCodes) codes.add(c);
+    }
+    if (!results) return [...codes].sort();
     for (const r of results.actions) codes.add(r.ownerCode);
     for (const r of results.auditRows) codes.add(r.ownerCode);
     return [...codes].sort();
-  }, [results]);
+  }, [results, customerCodes]);
 
   const handleRectify = useCallback((auditIndex: number, actionRow: ActionRow) => {
     // Persist to backend so exports reflect the change

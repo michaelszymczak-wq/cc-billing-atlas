@@ -274,6 +274,10 @@ export interface BarrelSnapshots {
   snap1Day: number;
   snap2Day: number;
   snap3Day: number | 'last';
+  skipCurrentYearBarrels?: boolean;
+  barrelRate: number;
+  puncheonRate: number;
+  tirageRate: number;
 }
 
 // ─── Billing Request / Response ───
@@ -417,6 +421,7 @@ export interface AppSettings {
   lastUsedYear: number;
   barrelSnapshots: BarrelSnapshots;
   bulkStorageRate: number;
+  bulkStorageMinimum: number;
   fruitIntake: FruitIntakeRunResult | null;
   customers: CustomerRecord[];
   fruitIntakeSettings: FruitIntakeSettings;
@@ -438,6 +443,14 @@ export interface SessionData {
 }
 
 // ─── Invoice Types ───
+
+export interface InvoiceSections {
+  actions?: boolean;
+  bulkStorage?: boolean;
+  barrelStorage?: boolean;
+  addOns?: boolean;
+  fruitIntake?: boolean;
+}
 
 export interface InvoiceLineItem {
   description: string;
@@ -463,12 +476,21 @@ export interface CustomerInvoice {
   totalDue: number;
 }
 
+export interface InvoiceCategoryTotals {
+  actions: number;
+  bulkStorage: number;
+  barrelStorage: number;
+  addOns: number;
+  fruitIntake: number;
+}
+
 export interface InvoiceCustomerSummary {
   ownerCode: string;
   customerName: string;
   wineryServices: CustomerInvoice | null;
   fruitIntake: CustomerInvoice | null;
   combinedTotal: number;
+  categoryTotals: InvoiceCategoryTotals;
 }
 
 export interface InvoicePreviewResponse {

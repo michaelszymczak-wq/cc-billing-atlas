@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  AppConfig, InvoicePreviewResponse,
+  AppConfig, InvoicePreviewResponse, InvoiceSections,
   getInvoicePreview, downloadInvoiceZip,
 } from '../api/client';
 import { BillingRunState } from './BillingControls';
@@ -18,7 +18,14 @@ interface InvoiceExportPageProps {
 export default function InvoiceExportPage({ config, billingState }: InvoiceExportPageProps) {
   const [month, setMonth] = useState(config.lastUsedMonth);
   const [year, setYear] = useState(config.lastUsedYear);
-  const [excludedText, setExcludedText] = useState('ELE');
+  const [excludedText, setExcludedText] = useState('AWC');
+  const [sections, setSections] = useState<InvoiceSections>({
+    actions: true,
+    bulkStorage: true,
+    barrelStorage: true,
+    addOns: true,
+    fruitIntake: true,
+  });
   const [preview, setPreview] = useState<InvoicePreviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -40,6 +47,7 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
         month,
         year,
         excludedCustomers: getExcludedList(),
+        sections,
       });
       setPreview(result);
     } catch (err) {
@@ -58,6 +66,7 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
         month,
         year,
         excludedCustomers: getExcludedList(),
+        sections,
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -124,6 +133,29 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
           <p className="text-xs text-gray-400 mt-1">Comma-separated owner codes to exclude</p>
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Include on Invoices</label>
+          <div className="space-y-1.5">
+            {([
+              ['actions', 'Winery Services'],
+              ['bulkStorage', 'Bulk Storage'],
+              ['barrelStorage', 'Barrel Storage'],
+              ['addOns', 'Add-Ons'],
+              ['fruitIntake', 'Fruit Intake'],
+            ] as [keyof InvoiceSections, string][]).map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sections[key] !== false}
+                  onChange={e => setSections(s => ({ ...s, [key]: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
         <button
           onClick={handleGeneratePreview}
           disabled={!hasSession || loading}
@@ -170,13 +202,16 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b">
                   <th className="text-left px-3 py-2 font-medium text-gray-600">Customer</th>
-                  <th className="text-right px-3 py-2 font-medium text-gray-600">Winery Services</th>
-                  <th className="text-right px-3 py-2 font-medium text-gray-600">Fruit Intake</th>
+                  {sections.actions !== false && <th className="text-right px-3 py-2 font-medium text-gray-600">Winery Services</th>}
+                  {sections.bulkStorage !== false && <th className="text-right px-3 py-2 font-medium text-gray-600">Bulk Storage</th>}
+                  {sections.barrelStorage !== false && <th className="text-right px-3 py-2 font-medium text-gray-600">Barrel Storage</th>}
+                  {sections.addOns !== false && <th className="text-right px-3 py-2 font-medium text-gray-600">Add-Ons</th>}
+                  {sections.fruitIntake !== false && <th className="text-right px-3 py-2 font-medium text-gray-600">Fruit Intake</th>}
                   <th className="text-right px-3 py-2 font-medium text-gray-600">Total</th>
                 </tr>
               </thead>
@@ -189,12 +224,11 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
                         <span className="text-gray-400 font-normal ml-1 text-xs">({c.customerName})</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      {c.wineryServices ? fmt(c.wineryServices.totalDue) : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {c.fruitIntake ? fmt(c.fruitIntake.totalDue) : '-'}
-                    </td>
+                    {sections.actions !== false && <td className="px-3 py-2 text-right">{c.categoryTotals.actions ? fmt(c.categoryTotals.actions) : '-'}</td>}
+                    {sections.bulkStorage !== false && <td className="px-3 py-2 text-right">{c.categoryTotals.bulkStorage ? fmt(c.categoryTotals.bulkStorage) : '-'}</td>}
+                    {sections.barrelStorage !== false && <td className="px-3 py-2 text-right">{c.categoryTotals.barrelStorage ? fmt(c.categoryTotals.barrelStorage) : '-'}</td>}
+                    {sections.addOns !== false && <td className="px-3 py-2 text-right">{c.categoryTotals.addOns ? fmt(c.categoryTotals.addOns) : '-'}</td>}
+                    {sections.fruitIntake !== false && <td className="px-3 py-2 text-right">{c.categoryTotals.fruitIntake ? fmt(c.categoryTotals.fruitIntake) : '-'}</td>}
                     <td className="px-3 py-2 text-right font-bold">{fmt(c.combinedTotal)}</td>
                   </tr>
                 ))}
@@ -202,12 +236,11 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
               <tfoot>
                 <tr className="bg-gray-50 font-bold">
                   <td className="px-3 py-2">Total</td>
-                  <td className="px-3 py-2 text-right">
-                    {fmt(preview.customers.reduce((s, c) => s + (c.wineryServices?.totalDue || 0), 0))}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {fmt(preview.customers.reduce((s, c) => s + (c.fruitIntake?.totalDue || 0), 0))}
-                  </td>
+                  {sections.actions !== false && <td className="px-3 py-2 text-right">{fmt(preview.customers.reduce((s, c) => s + c.categoryTotals.actions, 0))}</td>}
+                  {sections.bulkStorage !== false && <td className="px-3 py-2 text-right">{fmt(preview.customers.reduce((s, c) => s + c.categoryTotals.bulkStorage, 0))}</td>}
+                  {sections.barrelStorage !== false && <td className="px-3 py-2 text-right">{fmt(preview.customers.reduce((s, c) => s + c.categoryTotals.barrelStorage, 0))}</td>}
+                  {sections.addOns !== false && <td className="px-3 py-2 text-right">{fmt(preview.customers.reduce((s, c) => s + c.categoryTotals.addOns, 0))}</td>}
+                  {sections.fruitIntake !== false && <td className="px-3 py-2 text-right">{fmt(preview.customers.reduce((s, c) => s + c.categoryTotals.fruitIntake, 0))}</td>}
                   <td className="px-3 py-2 text-right">{fmt(preview.grandTotal)}</td>
                 </tr>
               </tfoot>
@@ -228,8 +261,11 @@ export default function InvoiceExportPage({ config, billingState }: InvoiceExpor
                   <span className="font-bold text-sm">{fmt(c.combinedTotal)}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-600">
-                  {c.wineryServices && <div>Winery: {fmt(c.wineryServices.totalDue)}</div>}
-                  {c.fruitIntake && <div>Fruit: {fmt(c.fruitIntake.totalDue)}</div>}
+                  {sections.actions !== false && c.categoryTotals.actions > 0 && <div>Winery: {fmt(c.categoryTotals.actions)}</div>}
+                  {sections.bulkStorage !== false && c.categoryTotals.bulkStorage > 0 && <div>Bulk: {fmt(c.categoryTotals.bulkStorage)}</div>}
+                  {sections.barrelStorage !== false && c.categoryTotals.barrelStorage > 0 && <div>Barrel: {fmt(c.categoryTotals.barrelStorage)}</div>}
+                  {sections.addOns !== false && c.categoryTotals.addOns > 0 && <div>Add-Ons: {fmt(c.categoryTotals.addOns)}</div>}
+                  {sections.fruitIntake !== false && c.categoryTotals.fruitIntake > 0 && <div>Fruit: {fmt(c.categoryTotals.fruitIntake)}</div>}
                 </div>
               </div>
             ))}

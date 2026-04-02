@@ -232,21 +232,28 @@ async function runBillingPipeline(
       await enrichCustomActionVolumes(actionRows, wineryId, token, onProgress);
 
       // Fetch all-inclusive lot codes from inventory snapshot (if any rules use excludeAllInclusive)
+      // Logic: lots WITHOUT an "Out of Program" tag are considered all-inclusive
       let allInclusiveLotCodes = new Set<string>();
       const hasAllInclusiveRules = rateRules.some((r) => r.enabled && r.excludeAllInclusive);
       if (hasAllInclusiveRules) {
-        onProgress({ step: 'rates', message: 'Fetching inventory for all-inclusive lot tags...', pct: 38 });
+        onProgress({ step: 'rates', message: "Checking lot tags for 'OOP'...", pct: 38 });
         const snapshot = await fetchInventorySnapshot(wineryId, token, end);
+        const outOfProgramLotCodes = new Set<string>();
         for (const item of snapshot) {
-          if (item.tags?.some((tag) => /all[- ]?inclusive/i.test(tag))) {
-            if (item.lot?.lotCode) {
-              allInclusiveLotCodes.add(item.lot.lotCode);
+          if (item.lot?.lotCode) {
+            allInclusiveLotCodes.add(item.lot.lotCode);
+            if (item.tags?.some((tag) => /^oop$/i.test(tag))) {
+              outOfProgramLotCodes.add(item.lot.lotCode);
             }
           }
         }
+        // Remove "Out of Program" lots — they are billable, not all-inclusive
+        for (const code of outOfProgramLotCodes) {
+          allInclusiveLotCodes.delete(code);
+        }
         onProgress({
           step: 'rates',
-          message: `Found ${allInclusiveLotCodes.size} all-inclusive lot(s).`,
+          message: `Found ${allInclusiveLotCodes.size} all-inclusive lot(s) (${outOfProgramLotCodes.size} "OOP").`,
           pct: 39,
         });
       }
@@ -310,7 +317,8 @@ async function runBillingPipeline(
           month,
           year,
           bulkSettings.bulkStorageRate,
-          onProgress
+          onProgress,
+          bulkSettings.bulkStorageMinimum
         );
         result.summary.bulkLots = result.bulkInventory.length;
       } catch (err) {
@@ -334,7 +342,6 @@ async function runBillingPipeline(
           token,
           month,
           year,
-          rateRules,
           barrelSnapshots,
           onProgress
         );

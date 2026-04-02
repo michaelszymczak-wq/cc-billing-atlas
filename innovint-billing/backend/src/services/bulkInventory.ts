@@ -8,11 +8,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Check if a lot has a BULK tag.
+ * Check if a lot has a BULK or OOP tag.
  */
 function isBulkLot(item: InventoryLot): boolean {
   if (!item.tags) return false;
-  return item.tags.some((tag) => tag === 'BULK' || tag === 'Bulk');
+  return item.tags.some((tag) => /^bulk$/i.test(tag) || /^oop$/i.test(tag));
 }
 
 /**
@@ -50,7 +50,8 @@ export async function runBulkInventory(
   month: string,
   year: number,
   bulkStorageRate: number,
-  onProgress: (event: ProgressEvent) => void
+  onProgress: (event: ProgressEvent) => void,
+  bulkStorageMinimum: number = 0
 ): Promise<BulkBillingRow[]> {
   const monthIndex = getMonthIndex(month);
   const totalDays = getDaysInMonth(month, year);
@@ -129,9 +130,12 @@ export async function runBulkInventory(
     const snap2Volume = snap2Map.get(ownerCode) || 0;
     const snap3Volume = snap3Map.get(ownerCode) || 0;
 
-    const billingVolume = Math.max(snap1Volume, snap2Volume, snap3Volume);
+    const billingVolume = (snap1Volume + snap2Volume + snap3Volume) / 3;
     const proration = snap2Volume > 0 ? 1.0 : 0.5;
-    const totalCost = Math.round(billingVolume * bulkStorageRate * proration * 100) / 100;
+    let totalCost = Math.round(billingVolume * bulkStorageRate * proration * 100) / 100;
+    if (totalCost > 0 && bulkStorageMinimum > 0) {
+      totalCost = Math.max(totalCost, bulkStorageMinimum);
+    }
 
     rows.push({
       ownerCode,

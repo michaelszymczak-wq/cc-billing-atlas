@@ -27,8 +27,9 @@ export function defaultSettings(): AppSettings {
     rateRules: [],
     lastUsedMonth: 'January',
     lastUsedYear: new Date().getFullYear(),
-    barrelSnapshots: { snap1Day: 1, snap2Day: 15, snap3Day: 'last' },
+    barrelSnapshots: { snap1Day: 1, snap2Day: 15, snap3Day: 'last', barrelRate: 0, puncheonRate: 0, tirageRate: 0 },
     bulkStorageRate: 0,
+    bulkStorageMinimum: 0,
     fruitIntake: null,
     customers: [],
     billableAddOns: [],
@@ -111,8 +112,11 @@ function mergeWithDefaults(parsed: Record<string, unknown>): AppSettings {
     rateRules: Array.isArray(parsed.rateRules) ? parsed.rateRules : defaults.rateRules,
     lastUsedMonth: (parsed.lastUsedMonth as string) ?? defaults.lastUsedMonth,
     lastUsedYear: (parsed.lastUsedYear as number) ?? defaults.lastUsedYear,
-    barrelSnapshots: (parsed.barrelSnapshots as AppSettings['barrelSnapshots']) ?? defaults.barrelSnapshots,
+    barrelSnapshots: parsed.barrelSnapshots
+      ? { ...defaults.barrelSnapshots, ...(parsed.barrelSnapshots as Partial<AppSettings['barrelSnapshots']>) }
+      : defaults.barrelSnapshots,
     bulkStorageRate: (parsed.bulkStorageRate as number) ?? defaults.bulkStorageRate,
+    bulkStorageMinimum: (parsed.bulkStorageMinimum as number) ?? defaults.bulkStorageMinimum,
     fruitIntake: (parsed.fruitIntake as AppSettings['fruitIntake']) ?? defaults.fruitIntake,
     customers,
     fruitIntakeSettings: parsed.fruitIntakeSettings
