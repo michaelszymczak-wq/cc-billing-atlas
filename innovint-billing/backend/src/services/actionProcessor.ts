@@ -1,5 +1,5 @@
 import { ActionApiItem, ActionRow, ProgressEvent } from '../types';
-import { fetchLotVolume } from './innovintApi';
+import { fetchLotVolume, fetchVesselOwner } from './innovintApi';
 
 /**
  * Convert UTC date string to PST-formatted string: YYYY-MM-DD HH:mm
@@ -443,22 +443,17 @@ function processCustomAction(action: ActionApiItem): ActionRow[] {
     displayName = combined.trim();
   }
 
-  // If vessels are present and no lotAccess owners, group by owner derived from vesselCode
+  // If vessels are present and no lotAccess owners, mark for vessel owner API lookup.
+  // Store first vessel code in vesselTypes for the enrichment step to resolve.
   if (vessels.length > 0 && !action.lotAccess?.owners?.length) {
-    const byOwner = new Map<string, number>();
-    for (const v of vessels) {
-      const code = ownerCodeFromVesselCode(v.vesselCode || '');
-      const owner = code || 'UNK';
-      byOwner.set(owner, (byOwner.get(owner) || 0) + 1);
-    }
-
-    return [...byOwner.entries()].map(([ownerCode, count]) => ({
+    const firstVesselCode = vessels[0].vesselCode || '';
+    return [{
       actionType: 'CUSTOM',
       actionId: String(action._id),
       lotCodes,
       performer: action.performedBy?.name || '',
       date,
-      ownerCode,
+      ownerCode: 'UNK',
       analysisOrNotes: displayName,
       hours,
       rate: 0,
@@ -467,9 +462,10 @@ function processCustomAction(action: ActionApiItem): ActionRow[] {
       matched: false,
       matchedRuleLabel: '',
       rawActionType: 'CUSTOM',
-      vesselCount: count,
-      quantity: count,
-    }));
+      vesselCount: vessels.length,
+      quantity: vessels.length,
+      vesselTypes: `__lookup__${firstVesselCode}`,
+    }];
   }
 
   const ownerCode = extractOwnerCode(action);
@@ -849,5 +845,69 @@ export async function enrichCustomActionVolumes(
       row.quantity = volume;
       row.unit = 'gal';
     }
+  }
+}
+
+const VESSEL_LOOKUP_PREFIX = '__lookup__';
+const VESSEL_LOOKUP_DELAY_MS = 200;
+
+/**
+ * Resolve owner codes for CUSTOM actions that had vessels but no lotAccess owners.
+ * These rows have ownerCode='UNK' and vesselTypes='__lookup__<vesselCode>'.
+ * Makes a single vessel GET request per unique vessel code, with rate-limit delays.
+ */
+export async function enrichCustomActionVesselOwners(
+  rows: ActionRow[],
+  wineryId: string,
+  token: string,
+  customerMap: Map<string, string>,
+  onProgress: (event: ProgressEvent) => void
+): Promise<void> {
+  const needsLookup = rows.filter(
+    (r) => r.ownerCode === 'UNK' && r.vesselTypes?.startsWith(VESSEL_LOOKUP_PREFIX)
+  );
+
+  if (needsLookup.length === 0) return;
+
+  // Deduplicate vessel codes
+  const vesselCodes = new Set<string>();
+  for (const row of needsLookup) {
+    vesselCodes.add(row.vesselTypes!.substring(VESSEL_LOOKUP_PREFIX.length));
+  }
+
+  onProgress({
+    step: 'actions',
+    message: `Resolving vessel owners for ${vesselCodes.size} unique vessel(s)...`,
+    pct: 33,
+  });
+
+  // Fetch owner for each unique vessel code with delay to avoid rate limits
+  const ownerCache = new Map<string, string>();
+  let completed = 0;
+  for (const vesselCode of vesselCodes) {
+    if (completed > 0) {
+      await new Promise((resolve) => setTimeout(resolve, VESSEL_LOOKUP_DELAY_MS));
+    }
+    const ownerName = await fetchVesselOwner(wineryId, token, vesselCode);
+    ownerCache.set(vesselCode, ownerName);
+    completed++;
+    if (completed % 5 === 0 || completed === vesselCodes.size) {
+      onProgress({
+        step: 'actions',
+        message: `Vessel owner lookups: ${completed}/${vesselCodes.size}`,
+        pct: 33 + Math.round((completed / vesselCodes.size) * 2),
+      });
+    }
+  }
+
+  // Apply resolved owners to rows
+  for (const row of needsLookup) {
+    const vesselCode = row.vesselTypes!.substring(VESSEL_LOOKUP_PREFIX.length);
+    const ownerName = ownerCache.get(vesselCode) || '';
+    // Map owner name to billing code using customer map, fall back to owner name
+    const code = customerMap.get(ownerName) || ownerName || 'UNK';
+    row.ownerCode = code;
+    // Restore vesselTypes to actual vessel type info (clear the lookup marker)
+    row.vesselTypes = undefined;
   }
 }

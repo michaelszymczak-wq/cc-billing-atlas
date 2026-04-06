@@ -205,6 +205,42 @@ export async function fetchLotVolume(
   }
 }
 
+/**
+ * Fetch the owner of a vessel by its vesselCode.
+ * Returns the first owner name, or '' if none found.
+ */
+export async function fetchVesselOwner(
+  wineryId: string,
+  token: string,
+  vesselCode: string
+): Promise<string> {
+  const url = new URL(`${BASE_URL}/wineries/${wineryId}/vessels`);
+  url.searchParams.set('vesselCode', vesselCode);
+  url.searchParams.set('size', '1');
+  url.searchParams.set('offset', '0');
+  url.searchParams.set('sort', 'vesselType:1,vesselCode:1');
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Authorization': `Access-Token ${token}`,
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) return '';
+
+    const data = (await response.json()) as unknown;
+    const items = Array.isArray(data) ? data : [];
+    if (items.length === 0) return '';
+
+    const ownerName = items[0]?.access?.owners?.[0]?.name;
+    return typeof ownerName === 'string' ? ownerName : '';
+  } catch {
+    return '';
+  }
+}
+
 export function getMonthDateRange(month: string, year: number): { start: string; end: string } {
   const monthIndex = getMonthIndex(month);
   if (monthIndex === -1) {

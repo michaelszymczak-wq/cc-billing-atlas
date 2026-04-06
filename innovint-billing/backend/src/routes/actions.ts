@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { ActionRow, AuditRow, BillingRequest, BillingResponse, ProgressEvent, RateRule, SessionData } from '../types';
 import { fetchAllActions, fetchInventorySnapshot, getMonthDateRange } from '../services/innovintApi';
-import { processActions, enrichCustomActionVolumes } from '../services/actionProcessor';
+import { processActions, enrichCustomActionVolumes, enrichCustomActionVesselOwners } from '../services/actionProcessor';
 import { applyRateMapping } from '../services/rateMapper';
 import { runBulkInventory } from '../services/bulkInventory';
 import { runBarrelInventory } from '../services/barrelInventory';
@@ -228,6 +228,14 @@ async function runBillingPipeline(
 
       onProgress({ step: 'actions', message: 'Processing actions...', pct: 35 });
       const actionRows = processActions(rawActions);
+
+      // Resolve vessel owners for CUSTOM actions without lotAccess owners
+      const customerNameToCode = new Map<string, string>();
+      const currentSettings = await loadSettings();
+      for (const c of currentSettings.customers) {
+        if (c.ownerName && c.code) customerNameToCode.set(c.ownerName, c.code);
+      }
+      await enrichCustomActionVesselOwners(actionRows, wineryId, token, customerNameToCode, onProgress);
 
       await enrichCustomActionVolumes(actionRows, wineryId, token, onProgress);
 
